@@ -1,0 +1,438 @@
+/* Google Font Import - Poppins */
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
+
+:root {
+    /* ===== Colors ===== */
+    --body-color: rgb(255, 245, 245);
+    --sidebar-color: #FFF;
+    --primary-color: rgb(253, 45, 45);
+    --primary-color-light: #fffbf5;
+    --toggle-color: #DDD;
+    --text-color: #707070;
+
+    /* ====== Transition ====== */
+    --tran-03: all 0.2s ease;
+    --tran-03: all 0.3s ease;
+    --tran-04: all 0.3s ease;
+    --tran-05: all 0.3s ease;
+}
+
+body {
+    min-height: 100vh;
+    background-color: var(--body-color);
+    /* Removed transition to prevent flickering when toggling dark mode */
+}
+
+::selection {
+    background-color: var(--primary-color);
+    color: #fff;
+}
+
+[data-bs-theme="dark"] {
+    --body-color: #18191a;
+    --sidebar-color: #242526;
+    /* --primary-color: #3a3b3c; */
+    --primary-color-light: #3a3b3c;
+    --toggle-color: #fff;
+    --text-color: #ccc;
+    /* Smooth transition for dark mode without causing flicker */
+    transition: background-color 0.2s ease-in-out;
+}
+
+[data-bs-theme="dark"] body {
+    background-color: var(--body-color);
+}
+
+/* Ensure Bootstrap dark mode compatibility */
+[data-bs-theme="dark"] {
+    color-scheme: dark;
+}
+
+[data-bs-theme="light"] {
+    color-scheme: light;
+}
+
+/* ===== Sidebar ===== */
+.sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 100%;
+    width: 250px;
+    padding: 10px 14px;
+    background: var(--sidebar-color);
+    transition: var(--tran-05);
+    z-index: 100;
+}
+
+.sidebar.close {
+    width: 88px;
+}
+
+/* Hide sidebar on mobile */
+@media (max-width: 767.98px) {
+    .sidebar {
+        display: none !important;
+        position: static !important;
+        width: 0 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+    }
+
+    .home {
+        left: 0 !important;
+        width: 100% !important;
+        /* Space for mobile navbar */
+    }
+}
+
+/* Show sidebar on desktop */
+@media (min-width: 768px) {
+    .navbar.admin-sidebar {
+        display: none !important;
+    }
+}
+
+
+/* ===== Reusable code - Here ===== */
+.sidebar li {
+    height: 50px;
+    list-style: none;
+    display: flex;
+    align-items: center;
+    margin-top: 10px;
+}
+
+.sidebar header .image,
+.sidebar .icon {
+    min-width: 60px;
+    border-radius: 6px;
+}
+
+.sidebar .icon {
+    min-width: 60px;
+    border-radius: 6px;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+}
+
+.sidebar .text,
+.sidebar .icon {
+    color: var(--text-color);
+    transition: var(--tran-03);
+}
+
+.sidebar .text {
+    font-size: 15px;
+    font-weight: 500;
+    white-space: nowrap;
+    opacity: 1;
+}
+
+.sidebar.close .text {
+    opacity: 0;
+}
+
+/* =========================== */
+
+.sidebar header {
+    position: relative;
+    margin-bottom: 20px;
+}
+
+.sidebar header .image-text {
+    display: flex;
+    align-items: center;
+}
+
+.sidebar header .logo-text {
+    display: flex;
+    flex-direction: column;
+}
+
+header .image-text .name {
+    margin-top: 2px;
+    font-size: 15px;
+    font-weight: 600;
+}
+
+header .image-text .profession {
+    font-size: 15px;
+    margin-top: -2px;
+    display: block;
+}
+
+.sidebar header .image {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.sidebar header .image img {
+    width: 40px;
+    border-radius: 6px;
+}
+
+.sidebar header .toggle {
+    position: absolute;
+    top: 50%;
+    right: -25px;
+    transform: translateY(-50%) rotate(180deg);
+    height: 25px;
+    width: 25px;
+    background-color: var(--primary-color);
+    color: var(--sidebar-color);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+    cursor: pointer;
+    transition: var(--tran-05);
+    z-index: 1000;
+    border: none;
+    outline: none;
+}
+
+.sidebar header .toggle:hover {
+    background-color: var(--primary-color);
+    opacity: 0.8;
+}
+
+[data-bs-theme="dark"] .sidebar header .toggle {
+    color: var(--text-color);
+}
+
+.sidebar.close .toggle {
+    transform: translateY(-50%) rotate(0deg);
+}
+
+.sidebar .menu {
+    margin-top: 10px;
+    flex: 1;
+}
+
+.sidebar li.search-box {
+    border-radius: 6px;
+    background-color: var(--primary-color-light);
+    cursor: pointer;
+    transition: var(--tran-05);
+}
+
+.sidebar li.search-box input {
+    height: 100%;
+    width: 100%;
+    outline: none;
+    border: none;
+    background-color: var(--primary-color-light);
+    color: var(--text-color);
+    border-radius: 6px;
+    font-size: 15px;
+    font-weight: 500;
+    transition: var(--tran-05);
+}
+
+.sidebar li a {
+    list-style: none;
+    height: 100%;
+    background-color: transparent;
+    display: flex;
+    align-items: center;
+    height: 100%;
+    width: 100%;
+    border-radius: 6px;
+    text-decoration: none;
+    transition: var(--tran-03);
+}
+
+.sidebar li a:hover {
+    background-color: var(--primary-color);
+}
+
+.sidebar li a:hover .icon,
+.sidebar li a:hover .text {
+    color: var(--sidebar-color);
+}
+
+[data-bs-theme="dark"] .sidebar li a:hover .icon,
+[data-bs-theme="dark"] .sidebar li a:hover .text {
+    color: var(--text-color);
+}
+
+
+.menu-bar::-webkit-scrollbar {
+    display: none;
+}
+
+.sidebar .menu-bar .mode {
+    border-radius: 6px;
+    background-color: var(--primary-color-light);
+    position: relative;
+    transition: var(--tran-05);
+}
+
+.menu-bar .mode .sun-moon {
+    height: 50px;
+    width: 60px;
+}
+
+.mode .sun-moon i {
+    position: absolute;
+}
+
+.mode .sun-moon i.sun {
+    opacity: 0;
+}
+
+[data-bs-theme="dark"] .mode .sun-moon i.sun {
+    opacity: 1;
+}
+
+[data-bs-theme="dark"] .mode .sun-moon i.moon {
+    opacity: 0;
+}
+
+.menu-bar .bottom-content .toggle-switch {
+    position: absolute;
+    right: 0;
+    height: 100%;
+    min-width: 60px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+.toggle-switch .switch {
+    position: relative;
+    height: 22px;
+    width: 40px;
+    border-radius: 25px;
+    background-color: var(--toggle-color);
+    transition: background-color 0.2s ease-in-out;
+}
+
+.switch::before {
+    content: '';
+    position: absolute;
+    height: 15px;
+    width: 15px;
+    border-radius: 50%;
+    top: 50%;
+    left: 5px;
+    transform: translateY(-50%);
+    background-color: var(--sidebar-color);
+    transition: left 0.2s ease-in-out, background-color 0.2s ease-in-out;
+}
+
+[data-bs-theme="dark"] .switch::before {
+    left: 20px;
+}
+
+.home {
+    position: absolute;
+    top: 0;
+    top: 0;
+    left: 250px;
+    height: 100vh;
+    width: calc(100% - 250px);
+    transition: var(--tran-05);
+}
+
+.home .text {
+    font-size: 30px;
+    font-weight: 500;
+    color: var(--text-color);
+    padding: 12px 60px;
+}
+
+.sidebar.close~.home {
+    left: 78px;
+    height: 100vh;
+    width: calc(100% - 78px);
+}
+
+[data-bs-theme="dark"] .home .text {
+    color: var(--text-color);
+}
+
+/* Logout Button Styles */
+.btn-logout {
+    margin: 0;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    border-radius: 6px;
+    height: 100%;
+    width: 100%;
+    display: flex;
+    align-items: center;
+    transition: var(--tran-03);
+    text-decoration: none;
+}
+
+.btn-logout:hover {
+    background-color: #dc3545;
+    color: white;
+}
+
+.btn-logout:hover .icon {
+    color: white;
+}
+
+.btn-logout:hover .nav-text {
+    color: white;
+}
+
+/* User Info Styles */
+.user-info a {
+    background-color: var(--primary-color-light);
+    border-radius: 6px;
+    padding: 8px 12px;
+    margin: 5px 0;
+}
+
+.user-info a:hover {
+    background-color: var(--primary-color);
+}
+
+.user-info a:hover .icon,
+.user-info a:hover .text {
+    color: var(--sidebar-color);
+}
+
+/* Navigation Link Active State */
+.nav-link.active a {
+    background-color: var(--primary-color);
+}
+
+.nav-link.active a .icon,
+.nav-link.active a .text {
+    color: var(--sidebar-color);
+}
+
+/* Bottom Content Styling */
+.bottom-content {
+    margin-top: auto;
+    padding-top: 20px;
+    margin-bottom: 10px;
+}
+
+.bottom-content .nav-link {
+    margin-bottom: 5px;
+}
+
+/* Ensure proper spacing in menu bar */
+.sidebar .menu-bar {
+    height: calc(100vh - 100px);
+    max-height: calc(100vh - 100px);
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    overflow-y: auto;
+    padding-top: 10px;
+}
