@@ -254,7 +254,7 @@
                     const user = JSON.parse(userData);
                     // Redirect based on user role
                     if (user.role === 'admin') {
-                        window.location.href = '../admin/burial/';
+                        window.location.href = '../admin/cemetery/';
                     } else {
                         window.location.href = '../staff/records/';
                     }
