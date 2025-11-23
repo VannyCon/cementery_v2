@@ -1071,23 +1071,61 @@ function showImagePreview(imagePath, imageNumber) {
     imageModal.className = "modal fade";
     imageModal.setAttribute("tabindex", "-1");
     imageModal.setAttribute("aria-hidden", "true");
+    imageModal.style.zIndex = "10060"; // Higher than arrival modal (usually 1055)
     imageModal.innerHTML = `
             <div class="modal-dialog modal-lg modal-dialog-centered">
                 <div class="modal-content">
                     <div class="modal-header">
                         <h5 class="modal-title">Grave Image ${imageNumber}</h5>
-                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                        <button type="button" class="btn-close image-preview-close" aria-label="Close"></button>
                     </div>
                     <div class="modal-body text-center p-0">
                         <img id="previewImage" src="${imagePath}" class="img-fluid" style="max-height: 70vh; width: 100%; object-fit: contain;" alt="Grave Image ${imageNumber}">
                     </div>
                     <div class="modal-footer">
-                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                        <button type="button" class="btn btn-secondary image-preview-close">Close</button>
                     </div>
                 </div>
             </div>
         `;
     document.body.appendChild(imageModal);
+
+    // Prevent modal events from bubbling to parent modals
+    imageModal.addEventListener("hide.bs.modal", function (e) {
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+    });
+    imageModal.addEventListener("hidden.bs.modal", function (e) {
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+    });
+
+    // Prevent backdrop clicks from affecting parent modal
+    imageModal.addEventListener("click", function (e) {
+      // If clicking the backdrop (the modal itself, not its content)
+      if (e.target === imageModal) {
+        e.stopPropagation();
+        const modalInstance = bootstrap.Modal.getInstance(imageModal);
+        if (modalInstance) {
+          modalInstance.hide();
+        }
+      }
+    });
+
+    // Handle close button clicks manually
+    imageModal.addEventListener("click", function (e) {
+      if (
+        e.target.classList.contains("image-preview-close") ||
+        e.target.closest(".image-preview-close")
+      ) {
+        e.preventDefault();
+        e.stopPropagation();
+        const modalInstance = bootstrap.Modal.getInstance(imageModal);
+        if (modalInstance) {
+          modalInstance.hide();
+        }
+      }
+    });
   }
 
   // Update the image source
@@ -1110,7 +1148,10 @@ function showImagePreview(imagePath, imageNumber) {
   }
 
   // Show the modal
-  const modal = new bootstrap.Modal(imageModal);
+  const modal = new bootstrap.Modal(imageModal, {
+    backdrop: true,
+    keyboard: true,
+  });
   modal.show();
 }
 

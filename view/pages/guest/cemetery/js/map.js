@@ -1453,7 +1453,13 @@ class CemeteryManager {
         }
 
         // Create a marker for the grave
-        this.createGraveLocationMarker(lat, lng, graveNumber, deceasedName);
+        this.createGraveLocationMarker(
+          lat,
+          lng,
+          graveNumber,
+          deceasedName,
+          record
+        );
 
         // Show a popup with grave information
         this.showGraveLocationPopup(
@@ -1630,7 +1636,13 @@ class CemeteryManager {
   }
 
   // Create a marker for the grave location
-  createGraveLocationMarker(lat, lng, graveNumber, deceasedName) {
+  createGraveLocationMarker(
+    lat,
+    lng,
+    graveNumber,
+    deceasedName,
+    record = null
+  ) {
     // Remove existing grave location marker if any
     if (this.graveLocationMarker) {
       this.graveLocationMarker.remove();
@@ -1647,13 +1659,38 @@ class CemeteryManager {
     markerEl.style.display = "flex";
     markerEl.style.alignItems = "center";
     markerEl.style.justifyContent = "center";
+    markerEl.style.cursor = "pointer";
     markerEl.innerHTML =
       '<i class="fas fa-cross" style="color: white; font-size: 12px;"></i>';
+
+    // Store grave data with the marker element for click handler
+    if (record) {
+      markerEl.dataset.graveData = JSON.stringify(record);
+    }
+
+    // Add click handler to show arrival modal
+    markerEl.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (record && this.locationTracker) {
+        // Show arrival modal with grave data
+        this.locationTracker.showArrivalModal(record);
+      }
+    });
+
+    // Add hover effect
+    markerEl.addEventListener("mouseenter", () => {
+      markerEl.style.transform = "scale(1.2)";
+      markerEl.style.transition = "transform 0.2s ease";
+    });
+
+    markerEl.addEventListener("mouseleave", () => {
+      markerEl.style.transform = "scale(1)";
+    });
 
     // Add the marker to the map
     this.graveLocationMarker = new maplibregl.Marker({
       element: markerEl,
-      title: `Grave ${graveNumber || "Location"}`,
+      title: `Grave ${graveNumber || "Location"} - Click to view details`,
     })
       .setLngLat([lng, lat])
       .addTo(this.map);
