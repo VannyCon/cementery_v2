@@ -44,7 +44,7 @@
                 </li> -->
                 
                 <li class="nav-link">
-                    <a href="../../admin/burial/index.php">
+                    <a href="../../admin/cemetery/index.php">
                         <i class='fas fa-map-marked-alt icon'></i>
                         <span class="text nav-text">Cementery Map</span>
                     </a>
