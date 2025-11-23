@@ -11,10 +11,15 @@ if ($currentDateTime >= $expireDateTime) {
 session_start();
 //Database Config
 
-define("H", "localhost");
-define("U", "root");
-define("P", "");
-define("DB", "cementery_db_two");
+// define("H", "localhost");
+// define("U", "root");
+// define("P", "");
+// define("DB", "cementery_db_two");
+define("H", "mysql-d77de55-vannycon001-3b2f.c.aivencloud.com:25521");
+define("U", "avnadmin");
+define("P", "AVNS_M8MYUL4UG_rvOxyfubU");
+define("DB", "cementery_system_db");
 define("URL", "http://localhost/Projects/cementry_system_v2/");
 define("FILEPATH", "C:\xampp\htdocs\Projects\cementry_system_v2");
+
 date_default_timezone_set("Asia/Manila");
