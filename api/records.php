@@ -130,8 +130,19 @@ $middleware->requireAuth(function() {
 
             case 'addRecordToGrave':
                 $graveId = $_POST['grave_id'] ?? '';
-                $data = $cemeteryServices->cleanArray($_POST);
-                $result = $cemeteryServices->addRecordToGrave($graveId, $data);
+                // Clean the main data but preserve nested arrays
+                $data = $_POST;
+                $cleanedData = [];
+                foreach ($data as $key => $value) {
+                    if (is_array($value)) {
+                        // Preserve nested arrays
+                        $cleanedData[$key] = $value;
+                    } else {
+                        // Clean scalar values
+                        $cleanedData[$key] = filter_var($value, FILTER_SANITIZE_FULL_SPECIAL_CHARS);
+                    }
+                }
+                $result = $cemeteryServices->addRecordToGrave($graveId, $cleanedData, $_FILES);
                 echo json_encode($result);
                 break;
                 

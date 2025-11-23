@@ -8,7 +8,7 @@ class AuthManager {
                        window.location.hostname === '127.0.0.1' ||
                        window.location.hostname.includes('local');
         
-        this.baseURL = window.location.origin + (isLocal ? '/Projects/cementry_system_mapgl' : '');
+        this.baseURL = window.location.origin + (isLocal ? '/Projects/cementry_system_v2' : '');
         this.tokenKey = 'auth_token';
         this.userKey = 'user_data';
     }

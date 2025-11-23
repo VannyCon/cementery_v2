@@ -219,8 +219,7 @@ class CemeteryServices extends config {
             $whereSql = count($whereClauses) ? ('WHERE ' . implode(' AND ', $whereClauses)) : '';
 
 			$query = "SELECT br.*, 
-                             ST_AsText(gp.location) as location_coords,
-                             gp.image_path
+                             ST_AsText(gp.location) as location_coords
                       FROM tbl_burial_records br 
                       LEFT JOIN tbl_grave_plots gp ON br.grave_id_fk = gp.id 
                       $whereSql 
@@ -277,8 +276,7 @@ class CemeteryServices extends config {
             $placeholders = str_repeat('?,', count($graveNumbersList) - 1) . '?';
             
             $recordsQuery = "SELECT br.*, 
-                                   ST_AsText(gp.location) as location_coords,
-                                   gp.image_path
+                                   ST_AsText(gp.location) as location_coords
                             FROM tbl_burial_records br 
                             LEFT JOIN tbl_grave_plots gp ON br.grave_id_fk = gp.id 
                             WHERE br.grave_number IN ($placeholders)
@@ -369,7 +367,7 @@ class CemeteryServices extends config {
 
     public function getHighlightedRecords($id) {
         try {
-            $query = "SELECT br.*, gp.image_path
+            $query = "SELECT br.*
                      FROM tbl_burial_records br 
                      LEFT JOIN tbl_grave_plots gp ON br.grave_id_fk = gp.id
                      WHERE gp.id = ?
@@ -516,19 +514,34 @@ class CemeteryServices extends config {
     /**
      * Add a single burial record to an existing grave plot
      */
-    public function addRecordToGrave($graveId, $data) {
+    public function addRecordToGrave($graveId, $data, $files = null) {
         try {
+            $this->beginTransaction();
+            
             // Verify grave plot exists
-            $checkQuery = "SELECT id, grave_number FROM tbl_grave_plots WHERE id = ?";
+            $checkQuery = "SELECT id FROM tbl_grave_plots WHERE id = ?";
             $checkStmt = $this->pdo->prepare($checkQuery);
             $checkStmt->execute([$graveId]);
             $grave = $checkStmt->fetch(PDO::FETCH_ASSOC);
             
             if (!$grave) {
+                $this->rollback();
                 return [
                     'success' => false,
                     'message' => 'Grave plot not found'
                 ];
+            }
+
+            // Get the grave_number from an existing burial record with the same grave_id_fk
+            $graveNumberQuery = "SELECT grave_number FROM tbl_burial_records WHERE grave_id_fk = ? LIMIT 1";
+            $graveNumberStmt = $this->pdo->prepare($graveNumberQuery);
+            $graveNumberStmt->execute([$graveId]);
+            $graveNumberResult = $graveNumberStmt->fetch(PDO::FETCH_ASSOC);
+            $graveNumber = $graveNumberResult['grave_number'] ?? null;
+
+            // If no existing grave_number found, generate a new one
+            if (!$graveNumber) {
+                $graveNumber = $data['grave_number'] ?? $this->generateGraveNumber();
             }
 
             // Get the next layer number for this grave
@@ -540,23 +553,115 @@ class CemeteryServices extends config {
             $layerResult = $layerStmt->fetch(PDO::FETCH_ASSOC);
             $nextLayer = $layerResult['next_layer'] ?? 1;
 
+            // Insert record first to get the ID for folder naming
             $query = "INSERT INTO tbl_burial_records 
                      (deceased_name, date_of_birth, date_of_death, burial_date, grave_number, 
-                      grave_id_fk, grave_layer_number, next_of_kin, contact_info, notes) 
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                      grave_id_fk, grave_layer_number, next_of_kin, contact_info, notes, grave_image) 
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
             $stmt = $this->pdo->prepare($query);
             $stmt->execute([
                 $data['deceased_name'],
                 $data['date_of_birth'] ?? null,
                 $data['date_of_death'],
                 $data['burial_date'],
-                $data['grave_number'] ?? $this->generateGraveNumber(),
+                $graveNumber,
                 $graveId,
                 $data['grave_layer_number'] ?? $nextLayer,
                 $data['next_of_kin'] ?? null,
                 $data['contact_info'] ?? null,
-                $data['notes'] ?? null
+                $data['notes'] ?? null,
+                null // Will be updated after image upload
             ]);
+            
+            $recordId = $this->pdo->lastInsertId();
+            
+            // Initialize ImageUploadHandler for image uploads
+            $imageHandler = null;
+            $graveImage = null;
+            
+            if ($files) {
+                require_once __DIR__ . '/ImageUploadHandler.php';
+                $imageHandler = new ImageUploadHandler();
+                
+                // Debug: Log file structure
+                error_log("addRecordToGrave - Files structure: " . json_encode(array_keys($files)));
+                if (isset($files['deceased_records'])) {
+                    error_log("addRecordToGrave - deceased_records keys: " . json_encode(array_keys($files['deceased_records'])));
+                    if (isset($files['deceased_records']['name'])) {
+                        error_log("addRecordToGrave - deceased_records['name'] keys: " . json_encode(array_keys($files['deceased_records']['name'])));
+                        if (isset($files['deceased_records']['name'][0])) {
+                            error_log("addRecordToGrave - deceased_records['name'][0] keys: " . json_encode(array_keys($files['deceased_records']['name'][0])));
+                        }
+                    }
+                }
+                
+                // Handle image uploads for this deceased record (index 0)
+                // Check multiple possible file structures
+                $photoFiles = [];
+                
+                // Try the nested structure first: deceased_records[0][grave_photo][]
+                if (isset($files['deceased_records']['name'][0]['grave_photo'])) {
+                    error_log("addRecordToGrave - Found files in nested structure: deceased_records[0][grave_photo]");
+                    $photoFiles = $this->extractDeceasedRecordFiles($files, 0);
+                }
+                // Alternative check: direct access
+                elseif (isset($files['deceased_records']['tmp_name'][0]['grave_photo'])) {
+                    error_log("addRecordToGrave - Found files via tmp_name check");
+                    // Handle single file in nested structure
+                    if (isset($files['deceased_records']['name'][0]['grave_photo']) && is_array($files['deceased_records']['name'][0]['grave_photo'])) {
+                        $photoFiles = $this->extractDeceasedRecordFiles($files, 0);
+                    } else {
+                        // Single file
+                        error_log("addRecordToGrave - Processing as single file");
+                        $photoFiles[] = [
+                            'name' => $files['deceased_records']['name'][0]['grave_photo'] ?? '',
+                            'type' => $files['deceased_records']['type'][0]['grave_photo'] ?? '',
+                            'tmp_name' => $files['deceased_records']['tmp_name'][0]['grave_photo'],
+                            'error' => $files['deceased_records']['error'][0]['grave_photo'] ?? 0,
+                            'size' => $files['deceased_records']['size'][0]['grave_photo'] ?? 0
+                        ];
+                    }
+                } else {
+                    error_log("addRecordToGrave - No files found in expected structure");
+                }
+                
+                error_log("addRecordToGrave - Photo files extracted: " . count($photoFiles));
+                
+                if (!empty($photoFiles) && $imageHandler) {
+                    // Use record ID for unique folder naming: data_{recordId}
+                    error_log("addRecordToGrave - Uploading files with folder: data_{$recordId}");
+                    $uploadResult = $imageHandler->handleDeceasedRecordUploads($photoFiles, $graveNumber, "data_{$recordId}");
+                    
+                    if ($uploadResult['success'] && !empty($uploadResult['files'])) {
+                        // Extract URLs from upload result
+                        $imageUrls = array_map(function($file) {
+                            return $file['secure_url'];
+                        }, $uploadResult['files']);
+                        $graveImage = implode(',', $imageUrls);
+                        
+                        error_log("addRecordToGrave - Image URLs: {$graveImage}");
+                        
+                        // Update record with image URLs
+                        $updateQuery = "UPDATE tbl_burial_records SET grave_image = ? WHERE id = ?";
+                        $updateStmt = $this->pdo->prepare($updateQuery);
+                        $updateStmt->execute([$graveImage, $recordId]);
+                    } else if (!$uploadResult['success']) {
+                        error_log("Image upload failed for addRecordToGrave: " . ($uploadResult['message'] ?? 'Unknown error'));
+                        // Continue with record creation even if image upload fails
+                    }
+                } else {
+                    if (empty($photoFiles)) {
+                        error_log("addRecordToGrave - No photo files extracted");
+                    }
+                    if (!$imageHandler) {
+                        error_log("addRecordToGrave - Image handler not initialized");
+                    }
+                }
+            } else {
+                error_log("addRecordToGrave - No files provided");
+            }
+
+            $this->commit();
 
             return [
                 'success' => true,
@@ -564,6 +669,14 @@ class CemeteryServices extends config {
                 'id' => $this->pdo->lastInsertId()
             ];
         } catch (PDOException $e) {
+            $this->rollback();
+            error_log("Add record to grave error: " . $e->getMessage());
+            return [
+                'success' => false,
+                'message' => 'Failed to add record to grave: ' . $e->getMessage()
+            ];
+        } catch (Exception $e) {
+            $this->rollback();
             error_log("Add record to grave error: " . $e->getMessage());
             return [
                 'success' => false,
@@ -626,11 +739,21 @@ class CemeteryServices extends config {
             $deleteBurialStmt = $this->pdo->prepare($deleteBurialQuery);
             $deleteBurialStmt->execute([$id]);
 
-            // If there is a linked grave plot, delete it as well (id matches grave_id_fk)
+            // Check if there are any other burial records with the same grave_id_fk
+            // Only delete the grave plot if there are no more records using it
             if (!empty($graveId)) {
-                $deleteGraveQuery = "DELETE FROM tbl_grave_plots WHERE id = ?";
-                $deleteGraveStmt = $this->pdo->prepare($deleteGraveQuery);
-                $deleteGraveStmt->execute([$graveId]);
+                $checkRemainingQuery = "SELECT COUNT(*) as count FROM tbl_burial_records WHERE grave_id_fk = ?";
+                $checkRemainingStmt = $this->pdo->prepare($checkRemainingQuery);
+                $checkRemainingStmt->execute([$graveId]);
+                $remainingResult = $checkRemainingStmt->fetch(PDO::FETCH_ASSOC);
+                $remainingCount = $remainingResult['count'] ?? 0;
+
+                // Only delete the grave plot if no other burial records are using it
+                if ($remainingCount == 0) {
+                    $deleteGraveQuery = "DELETE FROM tbl_grave_plots WHERE id = ?";
+                    $deleteGraveStmt = $this->pdo->prepare($deleteGraveQuery);
+                    $deleteGraveStmt->execute([$graveId]);
+                }
             }
 
             $this->pdo->commit();
@@ -660,8 +783,6 @@ class CemeteryServices extends config {
         try {
             $query = "SELECT gp.id, 
                              ST_AsText(gp.location) as location,
-                             gp.image_path,
-                             gp.status,
                              gp.created_at
                       FROM tbl_grave_plots gp
                       ORDER BY gp.created_at DESC";
@@ -710,7 +831,6 @@ class CemeteryServices extends config {
     public function createGravePlot($data) {
         try {
             $location = isset($data['location']) && $data['location'] ? $data['location'] : null;
-            $imagePath = isset($data['image_path']) ? $data['image_path'] : null;
     
             // If location is provided, validate it
             if ($location) {
@@ -722,15 +842,13 @@ class CemeteryServices extends config {
                 }
             }
     
-            // Updated query without grave_number and notes
+            // Updated query without grave_number, notes, image_path, and status
             $query = "INSERT INTO tbl_grave_plots
-                      (location, image_path, status)
-                      VALUES (ST_GeomFromText(?), ?, ?)";
+                      (location)
+                      VALUES (ST_GeomFromText(?))";
             $stmt = $this->pdo->prepare($query);
             $stmt->execute([
-                $location,
-                $imagePath,
-                $data['status'] ?? 'available'
+                $location
             ]);
     
             return [
@@ -795,12 +913,11 @@ class CemeteryServices extends config {
             }
     
             $query = "INSERT INTO tbl_grave_plots
-                      (location, status)
-                      VALUES (ST_GeomFromText(?), ?)";
+                      (location)
+                      VALUES (ST_GeomFromText(?))";
             $stmt = $this->pdo->prepare($query);
             $stmt->execute([
-                $location,
-                $data['status'] ?? 'occupied'
+                $location
             ]);
             
             $graveId = $this->pdo->lastInsertId();
@@ -1009,17 +1126,13 @@ class CemeteryServices extends config {
     public function updateGravePlot($id, $data) {
         try {
             $location = isset($data['location']) && $data['location'] ? $data['location'] : null;
-            $imagePath = isset($data['image_path']) ? $data['image_path'] : null;
     
             $query = "UPDATE tbl_grave_plots
-                      SET location = ST_GeomFromText(?), image_path = ?,
-                          status = ?
+                      SET location = ST_GeomFromText(?)
                       WHERE id = ?";
             $stmt = $this->pdo->prepare($query);
             $stmt->execute([
                 $location,
-                $imagePath,
-                $data['status'] ?? 'available',
                 $id
             ]);
     

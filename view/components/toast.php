@@ -314,23 +314,23 @@
       },
 
       // Convenience methods
-      success: function(title, message, duration = null) {
+      success: function(title, message, duration = 3000) {
         return this.show('success', title, message, duration);
       },
 
-      error: function(title, message, duration = null) {
+      error: function(title, message, duration = 3000) {
         return this.show('error', title, message, duration);
       },
 
-      warning: function(title, message, duration = null) {
+      warning: function(title, message, duration = 3000) {
         return this.show('warning', title, message, duration);
       },
 
-      info: function(title, message, duration = null) {
+      info: function(title, message, duration = 3000) {
         return this.show('info', title, message, duration);
       },
 
-      message: function(title, message, duration = null) {
+      message: function(title, message, duration = 3000) {
         return this.show('message', title, message, duration);
       }
     };

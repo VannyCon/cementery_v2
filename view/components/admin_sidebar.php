@@ -36,17 +36,24 @@
                     </a>
                 </li>
                 
-                <li class="nav-link">
+                <!-- <li class="nav-link">
                     <a href="../../admin/cemetery/">
                         <i class='fas fa-map-marked-alt icon'></i>
                         <span class="text nav-text">Cemetery Map</span>
                     </a>
-                </li>
+                </li> -->
                 
                 <li class="nav-link">
+                    <a href="../../admin/burial/index.php">
+                        <i class='fas fa-map-marked-alt icon'></i>
+                        <span class="text nav-text">Cementery Map</span>
+                    </a>
+                </li>
+
+                <li class="nav-link">
                     <a href="../../admin/records/">
-                        <i class='fas fa-cross icon'></i>
-                        <span class="text nav-text">Burial Records</span>
+                        <i class='fas fa-table icon'></i>
+                        <span class="text nav-text">Burial Table</span>
                     </a>
                 </li>
                 

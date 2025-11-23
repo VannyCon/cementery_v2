@@ -828,6 +828,11 @@ class CemeteryManager {
 
         this.updateTables(data);
 
+        // Render grave plots on the map
+        if (data.grave_plots && data.grave_plots.length > 0) {
+          this.renderGravePlots(data.grave_plots);
+        }
+
         // Grave plot click handlers are now handled by the general map click handler
         // which shows a confirmation modal for all clicks
 
@@ -859,12 +864,20 @@ class CemeteryManager {
   clearLayers() {
     // Reset grave plot click handlers flag so they can be set up again
     this.gravePlotClickHandlersSet = false;
+
+    // Clear grave plot markers
+    if (this.gravePlotMarkers) {
+      this.gravePlotMarkers.forEach((marker) => marker.remove());
+      this.gravePlotMarkers = [];
+    }
+
     // Remove all custom layers and sources
     const layersToRemove = [
       "cemeteries",
       "grave-plots-polygon",
       "grave-plots-polygon-stroke",
       "grave-plots-point",
+      "grave-plots-circles",
       "roads-top",
       "roads-border",
       "roads",
@@ -884,6 +897,7 @@ class CemeteryManager {
       "cemeteries",
       "roads",
       "grave-plots",
+      "grave-plots-circles",
       "annotations",
       "routes",
     ];
@@ -901,6 +915,197 @@ class CemeteryManager {
       annotations: [],
       routes: [],
     };
+  }
+
+  // Parse WKT POINT to coordinates
+  parseWKTPoint(wkt) {
+    if (!wkt || typeof wkt !== "string") {
+      return null;
+    }
+
+    try {
+      // Remove POINT( and )
+      const coordsString = wkt.replace(/^POINT\(/, "").replace(/\)$/, "");
+      const [first, second] = coordsString.trim().split(/\s+/).map(parseFloat);
+
+      // WKT format is usually (lng lat) for POINT
+      // Return as [lng, lat] for MapLibre GL
+      if (first > 100) {
+        // First value > 100 is likely longitude (lng, lat format)
+        return [first, second];
+      } else {
+        // First value < 20 is likely latitude (lat, lng format)
+        return [second, first];
+      }
+    } catch (error) {
+      console.error("Error parsing WKT POINT:", error, wkt);
+      return null;
+    }
+  }
+
+  // Create a circle GeoJSON feature for 10-meter radius
+  createCircleFeature(center, radiusMeters) {
+    const points = 64; // Number of points in the circle
+    const circleCoordinates = [];
+
+    for (let i = 0; i <= points; i++) {
+      const angle = (i * 360) / points;
+      const radian = (angle * Math.PI) / 180;
+
+      // Calculate distance in degrees (approximate)
+      // At latitude 10 (Philippines), 1 degree ≈ 111 km
+      // 10 meters ≈ 0.00009 degrees
+      const lat = center[1] + (radiusMeters / 111320) * Math.cos(radian);
+      const lng =
+        center[0] +
+        (radiusMeters / (111320 * Math.cos((center[1] * Math.PI) / 180))) *
+          Math.sin(radian);
+
+      circleCoordinates.push([lng, lat]);
+    }
+
+    // Close the circle
+    circleCoordinates.push(circleCoordinates[0]);
+
+    return {
+      type: "Feature",
+      geometry: {
+        type: "Polygon",
+        coordinates: [circleCoordinates],
+      },
+      properties: {},
+    };
+  }
+
+  // Render grave plots on the map with location icons and 10m radius circles
+  renderGravePlots(gravePlots) {
+    // Check if map is loaded before proceeding
+    if (!this.map || !this.map.isStyleLoaded()) {
+      console.warn(
+        "Map not ready for rendering grave plots, retrying in 100ms..."
+      );
+      setTimeout(() => {
+        this.renderGravePlots(gravePlots);
+      }, 100);
+      return;
+    }
+
+    // Initialize markers array if not exists
+    if (!this.gravePlotMarkers) {
+      this.gravePlotMarkers = [];
+    }
+
+    // Clear existing markers
+    this.gravePlotMarkers.forEach((marker) => marker.remove());
+    this.gravePlotMarkers = [];
+
+    const pointFeatures = [];
+    const circleFeatures = [];
+
+    gravePlots.forEach((plot) => {
+      let coordinates = null;
+
+      // Parse location if it exists (POINT format)
+      if (plot.location) {
+        coordinates = this.parseWKTPoint(plot.location);
+      }
+
+      // If no location, skip this plot
+      if (!coordinates) {
+        console.warn("Grave plot has no valid location:", plot);
+        return;
+      }
+
+      // Create point feature for marker
+      pointFeatures.push({
+        type: "Feature",
+        geometry: {
+          type: "Point",
+          coordinates: coordinates,
+        },
+        properties: {
+          id: plot.id,
+          grave_number: plot.grave_number || `G-${plot.id}`,
+          status: plot.status || "unknown",
+          type: "grave-plot",
+        },
+      });
+
+      // Create 10-meter radius circle feature
+      const circleFeature = this.createCircleFeature(coordinates, 10);
+      circleFeatures.push(circleFeature);
+
+      // Create location icon marker
+      const markerEl = document.createElement("div");
+      markerEl.className = "grave-plot-marker";
+      markerEl.innerHTML =
+        '<i class="fas fa-map-marker-alt" style="font-size: 24px; color: #dc3545;"></i>';
+      markerEl.style.cursor = "pointer";
+      markerEl.title = plot.grave_number || `Grave ${plot.id}`;
+
+      const marker = new maplibregl.Marker({
+        element: markerEl,
+        anchor: "bottom",
+      })
+        .setLngLat(coordinates)
+        .addTo(this.map);
+
+      // Store marker reference
+      this.gravePlotMarkers.push(marker);
+    });
+
+    // Store point features
+    this.features.gravePlots = pointFeatures;
+
+    // Add circles source and layer
+    if (circleFeatures.length > 0) {
+      // Remove existing circle layers and source if exists
+      if (this.map.getLayer("grave-plots-circles-stroke")) {
+        this.map.removeLayer("grave-plots-circles-stroke");
+      }
+      if (this.map.getLayer("grave-plots-circles")) {
+        this.map.removeLayer("grave-plots-circles");
+      }
+      if (this.map.getSource("grave-plots-circles")) {
+        this.map.removeSource("grave-plots-circles");
+      }
+
+      // Add new circle source
+      this.map.addSource("grave-plots-circles", {
+        type: "geojson",
+        data: {
+          type: "FeatureCollection",
+          features: circleFeatures,
+        },
+      });
+
+      // Add circle fill layer
+      this.map.addLayer({
+        id: "grave-plots-circles",
+        type: "fill",
+        source: "grave-plots-circles",
+        paint: {
+          "fill-color": "#dc3545",
+          "fill-opacity": 0.1,
+        },
+      });
+
+      // Add circle stroke layer
+      this.map.addLayer({
+        id: "grave-plots-circles-stroke",
+        type: "line",
+        source: "grave-plots-circles",
+        paint: {
+          "line-color": "#dc3545",
+          "line-width": 1,
+          "line-opacity": 0.3,
+        },
+      });
+    }
+
+    console.log(
+      `Rendered ${this.gravePlotMarkers.length} grave plot markers with 10m radius circles`
+    );
   }
 
   // Setup click handlers for grave plots - now using confirmation modal
@@ -1015,298 +1220,6 @@ class CemeteryManager {
     return null;
   }
 
-  showCemeteryPopup(feature, lngLat) {
-    const cemetery = feature.properties;
-    const photoHtml = cemetery.photo_path
-      ? `<div class="mt-2"><img src="${cemetery.photo_path}" alt="photo" style="max-width:150px;max-height:100px;object-fit:cover;"></div>`
-      : "";
-
-    const popupContent = `
-                    <div>
-                        <strong>${this.escapeHtml(cemetery.name)}</strong><br>
-                        ${this.escapeHtml(cemetery.description || "")}
-                        ${photoHtml}
-                        <div class="mt-2">
-                            <button class="btn btn-sm btn-primary" onclick="cemeteryManager.editCemetery(${
-                              cemetery.id
-                            })">
-                                <i class="fas fa-edit"></i> Edit
-                            </button>
-                            <button class="btn btn-sm btn-danger" onclick="cemeteryManager.deleteCemetery(${
-                              cemetery.id
-                            })">
-                                <i class="fas fa-trash"></i> Delete
-                            </button>
-                        </div>
-                    </div>
-        `;
-
-    new maplibregl.Popup()
-      .setLngLat(lngLat)
-      .setHTML(popupContent)
-      .addTo(this.map);
-  }
-
-  // Helper function to parse WKT POLYGON to Leaflet coordinates
-  parseWKTPolygon(wkt) {
-    if (!wkt || typeof wkt !== "string") {
-      return null;
-    }
-
-    try {
-      // Remove POLYGON(( and ))
-      const coordsString = wkt.replace(/^POLYGON\(\(/, "").replace(/\)\)$/, "");
-
-      // Split coordinates and detect format
-      const coordinates = coordsString.split(",").map((coordPair) => {
-        const [first, second] = coordPair.trim().split(/\s+/).map(parseFloat);
-
-        // For Philippines coordinates: lat ~10-11, lng ~123-124
-        // If first value is > 100, it's likely longitude (lng, lat format)
-        // If first value is < 20, it's likely latitude (lat, lng format)
-        if (first > 100) {
-          // WKT is in [lng, lat] format, convert to [lat, lng]
-          return [second, first];
-        } else {
-          // WKT is already in [lat, lng] format
-          return [first, second];
-        }
-      });
-
-      return coordinates;
-    } catch (error) {
-      console.error("Error parsing WKT:", error, wkt);
-      return null;
-    }
-  }
-
-  // Save Functions
-  async saveCemetery() {
-    try {
-      const formData = new FormData(document.getElementById("cemeteryForm"));
-      const response = await axios.post(this.cemeteryAPI, formData, {
-        headers: this.authManager.API_CONFIG.getFormHeaders(),
-      });
-
-      if (response.data.success) {
-        bootstrap.Modal.getInstance(
-          document.getElementById("cemeteryModal")
-        ).hide();
-        CustomToast.show("success", "Cemetery saved successfully");
-        this.loadData();
-      } else {
-        CustomToast.show(
-          "danger",
-          response.data.message || "Failed to save cemetery"
-        );
-      }
-    } catch (error) {
-      console.error("Error saving cemetery:", error);
-      if (error.response && error.response.status === 401) {
-        CustomToast.show(
-          "danger",
-          "Authentication Error",
-          "Please login again"
-        );
-        // Redirect to login page
-        window.location.href = "../../auth/login.php";
-      } else {
-        CustomToast.show("danger", "Error saving cemetery");
-      }
-    }
-  }
-
-  async saveRoad() {
-    try {
-      const formData = new FormData(document.getElementById("roadForm"));
-
-      // If we have geometry from Mapbox GL Draw, use it and remove the old coordinates
-      if (this.currentRoadGeometry) {
-        // Remove the old coordinates field to avoid constraint violation
-        formData.delete("coordinates");
-        // Set the WKT geometry
-        formData.set("geometry", this.currentRoadGeometry);
-
-        console.log(
-          "Sending road with WKT geometry:",
-          this.currentRoadGeometry
-        );
-      } else if (this.pendingRoadCoords) {
-        // Fallback to JSON coordinates if no WKT geometry
-        formData.set("coordinates", JSON.stringify(this.pendingRoadCoords));
-        console.log(
-          "Sending road with JSON coordinates:",
-          this.pendingRoadCoords
-        );
-      }
-
-      // Debug: Log what we're sending
-      console.log("Form data being sent:");
-      for (let [key, value] of formData.entries()) {
-        console.log(`${key}:`, value);
-      }
-
-      const response = await axios.post(this.cemeteryAPI, formData, {
-        headers: this.authManager.API_CONFIG.getFormHeaders(),
-      });
-
-      if (response.data.success) {
-        bootstrap.Modal.getInstance(
-          document.getElementById("roadModal")
-        ).hide();
-        CustomToast.show("success", "Road saved successfully");
-
-        // Clear the drawn feature from Mapbox GL Draw
-        this.clearDrawnFeature();
-
-        this.loadData();
-      } else {
-        CustomToast.show(
-          "danger",
-          response.data.message || "Failed to save road"
-        );
-      }
-    } catch (error) {
-      console.error("Error saving road:", error);
-      if (error.response && error.response.status === 401) {
-        CustomToast.show(
-          "danger",
-          "Authentication Error",
-          "Please login again"
-        );
-        // Redirect to login page
-        window.location.href = "../../auth/login.php";
-      } else {
-        CustomToast.show("danger", "Error saving road");
-      }
-    }
-  }
-
-  async saveBurialRecord() {
-    try {
-      const formData = new FormData(document.getElementById("burialForm"));
-      const response = await axios.post(this.cemeteryAPI, formData, {
-        headers: this.authManager.API_CONFIG.getFormHeaders(),
-      });
-
-      if (response.data.success) {
-        bootstrap.Modal.getInstance(
-          document.getElementById("burialModal")
-        ).hide();
-        CustomToast.show("success", "Burial record saved successfully");
-        this.loadData();
-      } else {
-        CustomToast.show(
-          "danger",
-          response.data.message || "Failed to save burial record"
-        );
-      }
-    } catch (error) {
-      console.error("Error saving burial record:", error);
-      if (error.response && error.response.status === 401) {
-        CustomToast.show(
-          "danger",
-          "Authentication Error",
-          "Please login again"
-        );
-        // Redirect to login page
-        window.location.href = "../../auth/login.php";
-      } else {
-        CustomToast.show("danger", "Error saving burial record");
-      }
-    }
-  }
-
-  async saveGravePlot() {
-    try {
-      const formData = new FormData(document.getElementById("plotForm"));
-      const response = await axios.post(this.cemeteryAPI, formData, {
-        headers: this.authManager.API_CONFIG.getFormHeaders(),
-      });
-
-      if (response.data.success) {
-        bootstrap.Modal.getInstance(
-          document.getElementById("plotModal")
-        ).hide();
-        CustomToast.show("success", "Grave plot saved successfully");
-        this.loadData();
-      } else {
-        CustomToast.show(
-          "danger",
-          response.data.message || "Failed to save grave plot"
-        );
-      }
-    } catch (error) {
-      console.error("Error saving grave plot:", error);
-      if (error.response && error.response.status === 401) {
-        CustomToast.show(
-          "danger",
-          "Authentication Error",
-          "Please login again"
-        );
-        // Redirect to login page
-        window.location.href = "../../auth/login.php";
-      } else {
-        CustomToast.show("danger", "Error saving grave plot");
-      }
-    }
-  }
-
-  async saveAnnotation() {
-    try {
-      const formData = new FormData(document.getElementById("annotationForm"));
-
-      // Get geometry from drawing
-      if (this.currentAnnotationGeometry) {
-        formData.set("geometry", this.currentAnnotationGeometry);
-      }
-
-      // Handle checkbox values
-      formData.set(
-        "is_visible",
-        document.getElementById("annotationVisible").checked ? "1" : "0"
-      );
-      formData.set(
-        "is_active",
-        document.getElementById("annotationActive").checked ? "1" : "0"
-      );
-
-      const response = await axios.post(this.cemeteryAPI, formData, {
-        headers: this.authManager.API_CONFIG.getFormHeaders(),
-      });
-
-      if (response.data.success) {
-        bootstrap.Modal.getInstance(
-          document.getElementById("annotationModal")
-        ).hide();
-        CustomToast.show("success", "Annotation saved successfully");
-
-        // Clear the drawn feature from Mapbox GL Draw
-        this.clearDrawnFeature();
-
-        this.loadData();
-      } else {
-        CustomToast.show(
-          "danger",
-          response.data.message || "Failed to save annotation"
-        );
-      }
-    } catch (error) {
-      console.error("Error saving annotation:", error);
-      if (error.response && error.response.status === 401) {
-        CustomToast.show(
-          "danger",
-          "Authentication Error",
-          "Please login again"
-        );
-        // Redirect to login page
-        window.location.href = "../../auth/login.php";
-      } else {
-        CustomToast.show("danger", "Error saving annotation");
-      }
-    }
-  }
-
   // Layer Management Methods
   async toggleAnnotationVisibility(id) {
     try {
@@ -1365,40 +1278,6 @@ class CemeteryManager {
   }
 
   // Routing Functions (from your original system_script.js)
-
-  performNodeSnapping(segments) {
-    // Endpoint snapping
-    for (let i = 0; i < this.graphNodes.length; i++) {
-      for (let j = i + 1; j < this.graphNodes.length; j++) {
-        const a = this.graphNodes[i];
-        const b = this.graphNodes[j];
-        const d = this.haversineMeters(a.lat, a.lng, b.lat, b.lng);
-        if (d > 0 && d <= this.SNAP_TOLERANCE_METERS) {
-          this.addEdge(a.id, b.id, d);
-        }
-      }
-    }
-
-    // Mid-segment snapping
-    for (let pIdx = 0; pIdx < this.graphNodes.length; pIdx++) {
-      const p = this.graphNodes[pIdx];
-      for (const [aId, bId] of segments) {
-        if (p.id === aId || p.id === bId) continue;
-        const a = this.graphNodes[aId];
-        const b = this.graphNodes[bId];
-        const { t, dist, proj } = this.projectPointOntoSegmentMeters(p, a, b);
-        if (t > 0 && t < 1 && dist <= this.SNAP_TOLERANCE_METERS) {
-          const jId = this.addNode(proj.lat, proj.lng);
-          const d1 = this.haversineMeters(a.lat, a.lng, proj.lat, proj.lng);
-          const d2 = this.haversineMeters(b.lat, b.lng, proj.lat, proj.lng);
-          const dp = this.haversineMeters(p.lat, p.lng, proj.lat, proj.lng);
-          this.addEdge(aId, jId, d1);
-          this.addEdge(jId, bId, d2);
-          this.addEdge(p.id, jId, dp);
-        }
-      }
-    }
-  }
 
   // Routing helper functions (from original system_script.js)
   nodeKey(lat, lng) {
@@ -2174,31 +2053,10 @@ class CemeteryManager {
   }
 
   updateTables(data) {
-    // this.updateCemeteriesTable(data.cemeteries || []);
     this.updateRoadsTable(data.roads || []);
     this.updatePlotsTable(data.grave_plots || []);
     this.updateAnnotationsTable(data.layer_annotations || []);
   }
-
-  // updateCemeteriesTable(cemeteries) {
-  //     const tbody = document.getElementById('cemeteriesTableBody');
-  //     tbody.innerHTML = cemeteries.map(cemetery => `
-  //         <tr>
-  //             <td>${this.escapeHtml(cemetery.name)}</td>
-  //             <td>${this.escapeHtml(cemetery.description || '')}</td>
-  //             <td>${cemetery.latitude}, ${cemetery.longitude}</td>
-  //             <td>${new Date(cemetery.created_at).toLocaleDateString()}</td>
-  //             <td>
-  //                 <button class="btn btn-sm btn-primary" onclick="cemeteryManager.editCemetery(${cemetery.id})">
-  //                     <i class="fas fa-edit"></i>
-  //                 </button>
-  //                 <button class="btn btn-sm btn-danger" onclick="cemeteryManager.deleteCemetery(${cemetery.id})">
-  //                     <i class="fas fa-trash"></i>
-  //                 </button>
-  //             </td>
-  //         </tr>
-  //     `).join('');
-  // }
 
   updateRoadsTable(roads) {
     const tbody = document.getElementById("roadsTableBody");
@@ -2210,11 +2068,6 @@ class CemeteryManager {
                 <td>${road.geometry_type}</td>
                 <td>${new Date(road.created_at).toLocaleDateString()}</td>
                 <td>
-                    <button class="btn btn-sm btn-primary" onclick="cemeteryManager.editRoad(${
-                      road.id
-                    })">
-                        <i class="fas fa-edit"></i>
-                    </button>
                     <button class="btn btn-sm btn-danger" onclick="cemeteryManager.deleteRoad(${
                       road.id
                     })">
@@ -2245,11 +2098,6 @@ class CemeteryManager {
                 <td>${this.escapeHtml(plot.notes || "")}</td>
                 <td>${new Date(plot.created_at).toLocaleDateString()}</td>
                 <td>
-                    <button class="btn btn-sm btn-primary" onclick="cemeteryManager.editGravePlot(${
-                      plot.id
-                    })">
-                        <i class="fas fa-edit"></i>
-                    </button>
                     <button class="btn btn-sm btn-danger" onclick="cemeteryManager.deleteGravePlot(${
                       plot.id
                     })">
@@ -2327,24 +2175,6 @@ class CemeteryManager {
         `
       )
       .join("");
-  }
-
-  // Edit Functions (placeholders for now)
-  editCemetery(id) {
-    // Implementation for editing cemetery
-    console.log("Edit cemetery:", id);
-  }
-
-  editRoad(id) {
-    console.log("Edit road:", id);
-  }
-
-  editBurial(id) {
-    console.log("Edit burial:", id);
-  }
-
-  editGravePlot(id) {
-    console.log("Edit grave plot:", id);
   }
 
   editAnnotation(id) {

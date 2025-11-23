@@ -120,9 +120,9 @@ class ImageUploadHandler {
      * @param int $deceasedIndex The deceased record index
      * @return array Result with success status and uploaded file URLs or error message
      */
-    public function handleDeceasedRecordUploads($photoFiles, $graveNumber, $deceasedIndex) {
+    public function handleDeceasedRecordUploads($photoFiles, $graveNumber, $deceasedIndexOrFolder) {
         error_log("=== handleDeceasedRecordUploads START ===");
-        error_log("Parameters - graveNumber: {$graveNumber}, deceasedIndex: {$deceasedIndex}");
+        error_log("Parameters - graveNumber: {$graveNumber}, deceasedIndexOrFolder: {$deceasedIndexOrFolder}");
         error_log("photoFiles count: " . (is_array($photoFiles) ? count($photoFiles) : 'NOT_ARRAY'));
         error_log("photoFiles type: " . gettype($photoFiles));
         
@@ -141,6 +141,9 @@ class ImageUploadHandler {
             $fileCount = count($photoFiles);
             error_log("Processing {$fileCount} photo file(s)");
             
+            // Determine folder name (could be "data_{recordId}" or numeric index)
+            $folderName = is_numeric($deceasedIndexOrFolder) ? "deceased_{$deceasedIndexOrFolder}" : $deceasedIndexOrFolder;
+            
             foreach ($photoFiles as $photoIndex => $photoFile) {
                 error_log("--- Processing photo file index: {$photoIndex} ---");
                 error_log("File data: " . json_encode([
@@ -153,7 +156,7 @@ class ImageUploadHandler {
                 
                 if ($photoFile['error'] === UPLOAD_ERR_OK) {
                     error_log("File upload error is OK, proceeding with upload");
-                    $result = $this->uploadDeceasedRecordFile($photoFile, $graveNumber, $deceasedIndex, $photoIndex + 1);
+                    $result = $this->uploadDeceasedRecordFile($photoFile, $graveNumber, $folderName, $photoIndex + 1);
                     
                     error_log("Upload result for photo {$photoIndex}: " . json_encode([
                         'success' => $result['success'] ?? false,
@@ -215,9 +218,9 @@ class ImageUploadHandler {
     /**
      * Upload a single file for a deceased record to Cloudinary
      */
-    private function uploadDeceasedRecordFile($file, $graveNumber, $deceasedIndex, $photoIndex) {
+    private function uploadDeceasedRecordFile($file, $graveNumber, $folderName, $photoIndex) {
         error_log("--- uploadDeceasedRecordFile START ---");
-        error_log("Parameters - graveNumber: {$graveNumber}, deceasedIndex: {$deceasedIndex}, photoIndex: {$photoIndex}");
+        error_log("Parameters - graveNumber: {$graveNumber}, folderName: {$folderName}, photoIndex: {$photoIndex}");
         error_log("File info - name: " . ($file['name'] ?? 'NOT_SET') . ", size: " . ($file['size'] ?? 'NOT_SET') . ", type: " . ($file['type'] ?? 'NOT_SET'));
         error_log("File tmp_name exists: " . (isset($file['tmp_name']) && file_exists($file['tmp_name']) ? 'YES' : 'NO'));
         if (isset($file['tmp_name'])) {
@@ -240,10 +243,11 @@ class ImageUploadHandler {
             }
             error_log("File validation PASSED");
             
-            // Use folder structure: cemetery_v2/grave/{graveNumber}/deceased_{index}/photo_{photoIndex}
+            // Use folder structure: cemetery_v2/grave/{graveNumber}/{folderName}/photo_{photoIndex}
+            // folderName can be "data_{recordId}" or "deceased_{index}"
             // public_id already includes full path, so don't specify folder separately to avoid duplication
             // Use folder parameter to ensure proper folder structure in Cloudinary
-            $folderPath = "cemetery_v2/grave/{$graveNumber}/deceased_{$deceasedIndex}";
+            $folderPath = "cemetery_v2/grave/{$graveNumber}/{$folderName}";
             $filename = "photo_{$photoIndex}";
             // For Cloudinary, we'll use folder + filename separately to avoid issues
             $publicId = $filename;

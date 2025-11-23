@@ -27,16 +27,40 @@ class CemeteryManager {
         // Get initial orientation and set appropriate pitch
         const initialPitch = this.getPitchForOrientation();
         
+        // Define a high-resolution satellite basemap (Esri World Imagery)
+        const satelliteStyle = {
+            version: 8,
+            sources: {
+                'esri-imagery': {
+                    type: 'raster',
+                    tiles: [
+                        'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
+                    ],
+                    tileSize: 256,
+                    attribution: 'Source: Esri, Maxar, Earthstar Geographics'
+                }
+            },
+            layers: [
+                {
+                    id: 'esri-imagery',
+                    type: 'raster',
+                    source: 'esri-imagery',
+                    minzoom: 0,
+                    maxzoom: 19
+                }
+            ]
+        };
+
         // Initialize MapLibre GL map
         this.map = new maplibregl.Map({
             container: 'map',
-            style: 'https://tiles.openfreemap.org/styles/bright',
-            pitch: initialPitch,
+            style: satelliteStyle,
+            // pitch: initialPitch,
             // center: [123.3372456, 10.950055], // [lng, lat] for MapLibre GL
             center: [123.421264, 10.887593],
             zoom: 19,
             minZoom: 0,
-            maxZoom: 24,  // 👈 allow zooming up to level 24
+            maxZoom: 19,  // 👈 allow zooming up to level 24
             canvasContextAttributes: {antialias: true}
         });
 

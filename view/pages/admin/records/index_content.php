@@ -5,9 +5,9 @@
                 <div class="card-header d-flex justify-content-between align-items-center">
                     <h3 class="card-title">Record Management</h3>
                     <div>
-                        <button type="button" class="btn btn-primary" onclick="openAddModal()">
+                        <a class="btn btn-primary" href="../burial/index.php">
                             <i class="bx bx-plus"></i> Add Record
-                        </button>
+                        </a>
                     </div>
                 </div>
                 <div class="card-body">
@@ -119,6 +119,24 @@
                                             <label class="form-label">Notes</label>
                                             <textarea class="form-control notes" name="deceased_records[0][notes]" rows="2"></textarea>
                                         </div>
+                                        <div class="col-12">
+                                            <label class="form-label">Grave Photos <span class="text-muted small">(Max 3 photos)</span></label>
+                                            <div class="input-group">
+                                                <input type="file" class="form-control grave-photo-input" 
+                                                       name="deceased_records[0][grave_photo][]" 
+                                                       accept="image/*" 
+                                                       multiple 
+                                                       data-record-index="0"
+                                                       data-max-files="3">
+                                                <button type="button" class="btn btn-outline-primary capture-grave-photo-btn" 
+                                                        data-record-index="0" 
+                                                        title="Take Photo">
+                                                    <i class="fas fa-camera"></i>
+                                                </button>
+                                            </div>
+                                            <div class="form-text">You can select up to 3 images or take photos directly.</div>
+                                            <div class="grave-photo-preview mt-2" data-record-index="0"></div>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -225,11 +243,82 @@
                         <div class="small text-muted">Notes</div>
                         <div id="viewNotes" class="border rounded p-2 bg-light"></div>
                     </div>
+                    <div class="col-12" id="viewGravePhotosContainer" style="display: none;">
+                        <div class="small text-muted mb-2">Grave Photos</div>
+                        <div class="row g-2" id="viewGravePhotosGallery">
+                            <!-- Grave photos will be displayed here -->
+                        </div>
+                    </div>
                    
                 </div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Loading/Progress Modal -->
+<div class="modal fade" id="uploadProgressModal" tabindex="-1" style="z-index: 10002;" data-bs-backdrop="static" data-bs-keyboard="false">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-body text-center py-4">
+                <div class="mb-3">
+                    <div class="spinner-border text-primary" role="status" style="width: 3rem; height: 3rem;">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                </div>
+                <h5 id="uploadProgressTitle">Saving Records...</h5>
+                <p class="text-muted mb-3" id="uploadProgressMessage">Please wait while we save your records and upload images.</p>
+                <div class="progress mb-3" style="height: 25px;">
+                    <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                         role="progressbar" 
+                         id="uploadProgressBar" 
+                         style="width: 0%"
+                         aria-valuenow="0" 
+                         aria-valuemin="0" 
+                         aria-valuemax="100">
+                        <span id="uploadProgressText">0%</span>
+                    </div>
+                </div>
+                <div class="small text-muted" id="uploadProgressDetails">
+                    <div id="uploadFileCount"></div>
+                    <div id="uploadSpeed"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Camera Modal for Grave Photos -->
+<div class="modal fade" id="cameraModal" tabindex="-1" style="z-index: 10001;" data-bs-backdrop="static" data-bs-keyboard="false">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Take Grave Photo</h5>
+                <button type="button" class="btn-close" id="closeCameraModalBtn"></button>
+            </div>
+            <div class="modal-body text-center">
+                <div id="cameraContainer" style="position: relative;">
+                    <video id="cameraVideo" autoplay muted style="width: 100%; max-width: 500px; border-radius: 8px;"></video>
+                    <canvas id="cameraCanvas" style="display: none;"></canvas>
+                </div>
+                <div id="capturedImageContainer" style="display: none;">
+                    <img id="capturedImage" style="max-width: 100%; max-height: 400px; border-radius: 8px;">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" id="cancelCameraBtn">Cancel</button>
+                <button type="button" class="btn btn-primary" id="captureBtn" style="display: none;">
+                    <i class="fas fa-camera me-1"></i>Capture Photo
+                </button>
+                <button type="button" class="btn btn-success" id="retakeBtn" style="display: none;">
+                    <i class="fas fa-redo me-1"></i>Retake
+                </button>
+                <button type="button" class="btn btn-success" id="addPhotoBtn" style="display: none;">
+                    <i class="fas fa-plus me-1"></i>Add Photo
+                </button>
             </div>
         </div>
     </div>
