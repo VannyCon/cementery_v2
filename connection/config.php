@@ -18,8 +18,9 @@ session_start();
 define("H", "mysql-d77de55-vannycon001-3b2f.c.aivencloud.com:25521");
 define("U", "avnadmin");
 define("P", "AVNS_M8MYUL4UG_rvOxyfubU");
-define("DB", "cementery_system_db");
+define("DB", "cementery_new_db");
 define("URL", "http://localhost/Projects/cementry_system_v2/");
 define("FILEPATH", "C:\xampp\htdocs\Projects\cementry_system_v2");
 
 date_default_timezone_set("Asia/Manila");
+
