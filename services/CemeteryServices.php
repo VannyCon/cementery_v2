@@ -220,7 +220,6 @@ class CemeteryServices extends config {
 
 			$query = "SELECT br.*, 
                              ST_AsText(gp.location) as location_coords,
-                             ST_AsText(gp.boundary) as boundary_coords,
                              gp.image_path
                       FROM tbl_burial_records br 
                       LEFT JOIN tbl_grave_plots gp ON br.grave_id_fk = gp.id 
@@ -279,7 +278,6 @@ class CemeteryServices extends config {
             
             $recordsQuery = "SELECT br.*, 
                                    ST_AsText(gp.location) as location_coords,
-                                   ST_AsText(gp.boundary) as boundary_coords,
                                    gp.image_path
                             FROM tbl_burial_records br 
                             LEFT JOIN tbl_grave_plots gp ON br.grave_id_fk = gp.id 
@@ -448,7 +446,6 @@ class CemeteryServices extends config {
                 // Create new grave plot (without grave_number and notes)
                 $graveData = [
                     'status' => 'occupied',
-                    'boundary' => $data['boundary'] ?? null,
                     'location' => $data['location'] ?? null
                 ];
                 $result = $this->createGravePlot($graveData);
@@ -665,7 +662,6 @@ class CemeteryServices extends config {
                              ST_AsText(gp.location) as location,
                              gp.image_path,
                              gp.status,
-                             ST_AsText(gp.boundary) as boundary, 
                              gp.created_at
                       FROM tbl_grave_plots gp
                       ORDER BY gp.created_at DESC";
@@ -716,15 +712,6 @@ class CemeteryServices extends config {
             $location = isset($data['location']) && $data['location'] ? $data['location'] : null;
             $imagePath = isset($data['image_path']) ? $data['image_path'] : null;
     
-            $boundary = isset($data['boundary']) ? $this->ensurePolygonClosed($data['boundary']) : null;
-    
-            // If no boundary is provided, create a default one
-            if (!$boundary) {
-                // Create a default 1x1 meter square boundary at coordinates 0,0
-                // This is a placeholder that can be updated later when the actual location is determined
-                $boundary = 'POLYGON((0 0, 1 0, 1 1, 0 1, 0 0))';
-            }
-    
             // If location is provided, validate it
             if ($location) {
                 $testQuery = "SELECT ST_GeomFromText(?) as test_geom";
@@ -737,13 +724,12 @@ class CemeteryServices extends config {
     
             // Updated query without grave_number and notes
             $query = "INSERT INTO tbl_grave_plots
-                      (location, image_path, boundary, status)
-                      VALUES (ST_GeomFromText(?), ?, ST_GeomFromText(?), ?)";
+                      (location, image_path, status)
+                      VALUES (ST_GeomFromText(?), ?, ?)";
             $stmt = $this->pdo->prepare($query);
             $stmt->execute([
                 $location,
                 $imagePath,
-                $boundary,
                 $data['status'] ?? 'available'
             ]);
     
@@ -763,6 +749,7 @@ class CemeteryServices extends config {
     
     /**
      * Create grave plot with multiple images and burial records
+     * Images are now stored per deceased record in tbl_burial_records.grave_image
      */
     public function createGravePlotWithImages($data, $files = null) {
         try {
@@ -772,35 +759,29 @@ class CemeteryServices extends config {
             $graveNumber = $this->generateGraveNumber();
             
             // Handle image uploads if files are provided
-            $imagePath = null;
-            if ($files && isset($files['images'])) {
-                require_once 'ImageUploadHandler.php';
-                $imageHandler = new ImageUploadHandler();
-                $uploadResult = $imageHandler->handleMultipleUploads($files, $graveNumber);
+            // $imagePath = null;
+            // if ($files && isset($files['images'])) {
+            //     require_once 'ImageUploadHandler.php';
+            //     $imageHandler = new ImageUploadHandler();
+            //     $uploadResult = $imageHandler->handleMultipleUploads($files, $graveNumber);
                 
-                if ($uploadResult['success'] && !empty($uploadResult['files'])) {
-                    // Extract URLs from Cloudinary data
-                    $imageUrls = array_map(function($file) {
-                        return $file['secure_url'];
-                    }, $uploadResult['files']);
-                    $imagePath = implode(',', $imageUrls);
-                } else if (!$uploadResult['success']) {
-                    $this->rollback();
-                    return [
-                        'success' => false,
-                        'message' => 'Image upload failed: ' . $uploadResult['message']
-                    ];
-                }
-            }
+            //     if ($uploadResult['success'] && !empty($uploadResult['files'])) {
+            //         // Extract URLs from Cloudinary data
+            //         $imageUrls = array_map(function($file) {
+            //             return $file['secure_url'];
+            //         }, $uploadResult['files']);
+            //         $imagePath = implode(',', $imageUrls);
+            //     } else if (!$uploadResult['success']) {
+            //         $this->rollback();
+            //         return [
+            //             'success' => false,
+            //             'message' => 'Image upload failed: ' . $uploadResult['message']
+            //         ];
+            //     }
+            // }
             
             // Create grave plot
             $location = isset($data['location']) && $data['location'] ? $data['location'] : null;
-            $boundary = isset($data['boundary']) ? $this->ensurePolygonClosed($data['boundary']) : null;
-    
-            // If no boundary is provided, create a default one
-            if (!$boundary) {
-                $boundary = 'POLYGON((0 0, 1 0, 1 1, 0 1, 0 0))';
-            }
     
             // If location is provided, validate it
             if ($location) {
@@ -814,41 +795,120 @@ class CemeteryServices extends config {
             }
     
             $query = "INSERT INTO tbl_grave_plots
-                      (location, image_path, boundary, status)
-                      VALUES (ST_GeomFromText(?), ?, ST_GeomFromText(?), ?)";
+                      (location, status)
+                      VALUES (ST_GeomFromText(?), ?)";
             $stmt = $this->pdo->prepare($query);
             $stmt->execute([
                 $location,
-                $imagePath,
-                $boundary,
                 $data['status'] ?? 'occupied'
             ]);
             
             $graveId = $this->pdo->lastInsertId();
             
+            // Initialize ImageUploadHandler for image uploads
+            $imageHandler = null;
+            if ($files) {
+                require_once __DIR__ . '/ImageUploadHandler.php';
+                $imageHandler = new ImageUploadHandler();
+            }
+            
             // Create burial records if deceased records are provided
             $createdRecords = [];
             $deceasedRecords = $data['deceased_records'] ?? [];
             
-            
             if (!empty($deceasedRecords)) {
+                error_log("=== Processing deceased records ===");
+                error_log("Total deceased records: " . count($deceasedRecords));
+                error_log("Files provided: " . ($files ? 'YES' : 'NO'));
+                error_log("ImageHandler initialized: " . ($imageHandler ? 'YES' : 'NO'));
+                
                 foreach ($deceasedRecords as $index => $record) {
+                    error_log("--- Processing deceased record index: {$index} ---");
+                    error_log("Record data: " . json_encode([
+                        'deceased_name' => $record['deceased_name'] ?? 'NOT_SET',
+                        'date_of_death' => $record['date_of_death'] ?? 'NOT_SET'
+                    ]));
+                    
+                    // Handle image uploads for this deceased record
+                    $graveImage = null;
+                    
+                    $hasFiles = $files && isset($files['deceased_records']['name'][$index]['grave_photo']);
+                    error_log("Checking for files - hasFiles: " . ($hasFiles ? 'YES' : 'NO'));
+                    if ($hasFiles) {
+                        error_log("Files structure exists for deceased record {$index}");
+                        error_log("Files structure: " . json_encode([
+                            'has_name' => isset($files['deceased_records']['name'][$index]['grave_photo']),
+                            'name_type' => isset($files['deceased_records']['name'][$index]['grave_photo']) ? gettype($files['deceased_records']['name'][$index]['grave_photo']) : 'NOT_SET'
+                        ]));
+                    }
+                    
+                    if ($files && isset($files['deceased_records']['name'][$index]['grave_photo']) && $imageHandler) {
+                        error_log("Extracting files for deceased record {$index}...");
+                        $photoFiles = $this->extractDeceasedRecordFiles($files, $index);
+                        error_log("Extracted photoFiles count: " . count($photoFiles));
+                        error_log("Extracted photoFiles: " . json_encode(array_map(function($f) {
+                            return [
+                                'name' => $f['name'] ?? 'NOT_SET',
+                                'size' => $f['size'] ?? 'NOT_SET',
+                                'error' => $f['error'] ?? 'NOT_SET'
+                            ];
+                        }, $photoFiles)));
+                        
+                        if (!empty($photoFiles)) {
+                            error_log("Calling handleDeceasedRecordUploads for deceased record {$index} with graveNumber: {$graveNumber}");
+                            $uploadResult = $imageHandler->handleDeceasedRecordUploads($photoFiles, $graveNumber, $index);
+                            
+                            error_log("Upload result for deceased record {$index}: " . json_encode([
+                                'success' => $uploadResult['success'] ?? false,
+                                'message' => $uploadResult['message'] ?? 'NO_MESSAGE',
+                                'files_count' => isset($uploadResult['files']) ? count($uploadResult['files']) : 0
+                            ]));
+                            
+                            if ($uploadResult['success'] && !empty($uploadResult['files'])) {
+                                error_log("Upload successful, extracting URLs...");
+                                // Extract URLs from upload result
+                                $imageUrls = array_map(function($file) {
+                                    return $file['secure_url'];
+                                }, $uploadResult['files']);
+                                $graveImage = implode(',', $imageUrls);
+                                error_log("Grave image URLs: {$graveImage}");
+                            } else if (!$uploadResult['success']) {
+                                error_log("Image upload failed for deceased record {$index}: " . ($uploadResult['message'] ?? 'NO_MESSAGE'));
+                                // Continue with record creation even if image upload fails
+                            } else {
+                                error_log("Upload returned success but no files in result for deceased record {$index}");
+                            }
+                        } else {
+                            error_log("No photoFiles extracted for deceased record {$index}");
+                        }
+                    } else {
+                        if (!$files) {
+                            error_log("No files provided for deceased record {$index}");
+                        } else if (!isset($files['deceased_records']['name'][$index]['grave_photo'])) {
+                            error_log("Files structure missing for deceased record {$index}");
+                        } else if (!$imageHandler) {
+                            error_log("ImageHandler not initialized for deceased record {$index}");
+                        }
+                    }
+                    
+                    // Insert burial record with grave_image
                     $query = "INSERT INTO tbl_burial_records 
                              (deceased_name, date_of_birth, date_of_death, burial_date, grave_number, 
-                              grave_id_fk, grave_layer_number, next_of_kin, contact_info, notes) 
-                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                              grave_id_fk, grave_layer_number, next_of_kin, contact_info, notes, grave_image) 
+                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
                     $stmt = $this->pdo->prepare($query);
                     $stmt->execute([
                         $record['deceased_name'],
                         $record['date_of_birth'] ?? null,
                         $record['date_of_death'],
-                        $record['burial_date'],
+                        $record['burial_date'] ?? null,
                         $graveNumber,
                         $graveId,
                         $record['grave_layer_number'] ?? ($index + 1),
                         $record['next_of_kin'] ?? null,
                         $record['contact_info'] ?? null,
-                        $record['notes'] ?? null
+                        $record['notes'] ?? null,
+                        $graveImage
                     ]);
                     $createdRecords[] = $this->pdo->lastInsertId();
                 }
@@ -861,7 +921,6 @@ class CemeteryServices extends config {
                 'message' => 'Grave plot and burial records created successfully',
                 'id' => $graveId,
                 'grave_number' => $graveNumber,
-                'image_path' => $imagePath,
                 'created_records' => $createdRecords
             ];
             
@@ -872,7 +931,76 @@ class CemeteryServices extends config {
                 'success' => false,
                 'message' => 'Failed to create grave plot: ' . $e->getMessage()
             ];
+        } catch (Exception $e) {
+            $this->rollback();
+            error_log("Create grave plot with images error: " . $e->getMessage());
+            return [
+                'success' => false,
+                'message' => 'Failed to create grave plot: ' . $e->getMessage()
+            ];
         }
+    }
+    
+    /**
+     * Extract files for a specific deceased record index from $_FILES array
+     * Handles nested array structure: deceased_records[index][grave_photo][]
+     */
+    private function extractDeceasedRecordFiles($files, $recordIndex) {
+        $extractedFiles = [];
+        
+        if (!isset($files['deceased_records']['name'][$recordIndex]['grave_photo'])) {
+            return $extractedFiles;
+        }
+        
+        $photos = $files['deceased_records']['name'][$recordIndex]['grave_photo'];
+        error_log("Photos variable type: " . gettype($photos));
+        error_log("Photos is_array: " . (is_array($photos) ? 'YES' : 'NO'));
+        
+        if (is_array($photos)) {
+            error_log("Photos count: " . count($photos));
+        }
+        
+        // Handle both single file and multiple files
+        if (!is_array($photos)) {
+            error_log("Processing as SINGLE file");
+            // Single file
+            $extractedFiles[] = [
+                'name' => $files['deceased_records']['name'][$recordIndex]['grave_photo'],
+                'type' => $files['deceased_records']['type'][$recordIndex]['grave_photo'],
+                'tmp_name' => $files['deceased_records']['tmp_name'][$recordIndex]['grave_photo'],
+                'error' => $files['deceased_records']['error'][$recordIndex]['grave_photo'],
+                'size' => $files['deceased_records']['size'][$recordIndex]['grave_photo']
+            ];
+            error_log("Single file extracted: " . json_encode([
+                'name' => $extractedFiles[0]['name'],
+                'size' => $extractedFiles[0]['size'],
+                'error' => $extractedFiles[0]['error']
+            ]));
+        } else {
+            error_log("Processing as MULTIPLE files");
+            // Multiple files
+            $count = count($photos);
+            error_log("Multiple files count: {$count}");
+            for ($i = 0; $i < $count; $i++) {
+                error_log("Extracting file {$i} of {$count}");
+                $extractedFiles[] = [
+                    'name' => $files['deceased_records']['name'][$recordIndex]['grave_photo'][$i],
+                    'type' => $files['deceased_records']['type'][$recordIndex]['grave_photo'][$i],
+                    'tmp_name' => $files['deceased_records']['tmp_name'][$recordIndex]['grave_photo'][$i],
+                    'error' => $files['deceased_records']['error'][$recordIndex]['grave_photo'][$i],
+                    'size' => $files['deceased_records']['size'][$recordIndex]['grave_photo'][$i]
+                ];
+                error_log("File {$i} extracted: " . json_encode([
+                    'name' => $extractedFiles[$i]['name'],
+                    'size' => $extractedFiles[$i]['size'],
+                    'error' => $extractedFiles[$i]['error']
+                ]));
+            }
+        }
+        
+        error_log("Total extracted files: " . count($extractedFiles));
+        error_log("=== extractDeceasedRecordFiles END ===");
+        return $extractedFiles;
     }
 
     /**
@@ -885,13 +1013,12 @@ class CemeteryServices extends config {
     
             $query = "UPDATE tbl_grave_plots
                       SET location = ST_GeomFromText(?), image_path = ?,
-                          boundary = ST_GeomFromText(?), status = ?
+                          status = ?
                       WHERE id = ?";
             $stmt = $this->pdo->prepare($query);
             $stmt->execute([
                 $location,
                 $imagePath,
-                $data['boundary'] ?? null,
                 $data['status'] ?? 'available',
                 $id
             ]);

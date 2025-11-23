@@ -484,8 +484,6 @@ class CemeteryManager {
       const lngLat = e.lngLat;
       const latlng = { lat: lngLat.lat, lng: lngLat.lng };
 
-      // Drawing is now handled by Mapbox GL Draw
-
       // If user location is active, automatically use it as start and clicked point as destination
       if (this.isUserLocationActive && this.graphNodes.length > 0) {
         const snapped = this.findNearestGraphNode(latlng);
@@ -508,29 +506,133 @@ class CemeteryManager {
       }
 
       // Original routing mode handling
-      if (!this.routingMode) return;
-      if (!this.graphNodes.length) {
-        this.setRouteInfo("No roads to route on. Add roads first.");
+      if (this.routingMode) {
+        if (!this.graphNodes.length) {
+          this.setRouteInfo("No roads to route on. Add roads first.");
+          return;
+        }
+
+        const snapped = this.findNearestGraphNode(latlng);
+        if (!snapped) {
+          this.setRouteInfo("No nearby road point found.");
+          return;
+        }
+
+        if (this.routingMode === "start") {
+          this.setStartPoint(snapped);
+        } else if (this.routingMode === "end") {
+          this.setEndPoint(snapped);
+        }
+
+        this.routingMode = null;
         return;
       }
 
-      const snapped = this.findNearestGraphNode(latlng);
-      if (!snapped) {
-        this.setRouteInfo("No nearby road point found.");
+      // Check if we're in a drawing mode (handled by Mapbox GL Draw)
+      if (this.currentDrawingMode) {
+        // Drawing is handled by Mapbox GL Draw, don't interfere
         return;
       }
 
-      if (this.routingMode === "start") {
-        this.setStartPoint(snapped);
-      } else if (this.routingMode === "end") {
-        this.setEndPoint(snapped);
-      }
-
-      this.routingMode = null;
+      // Default behavior: Show location confirmation modal for adding records
+      this.showLocationConfirmationModal(lngLat, latlng);
     });
 
     // Note: Feature-specific click handlers are set up in each render method
     // (renderCemeteries, renderRoads, renderGravePlots, renderAnnotations)
+  }
+
+  // Show location confirmation modal
+  showLocationConfirmationModal(lngLat, latlng) {
+    // Store the clicked location
+    this.pendingLocation = {
+      lng: lngLat.lng,
+      lat: lngLat.lat,
+      lngLat: lngLat,
+      latlng: latlng,
+    };
+
+    // Format location as WKT POINT
+    const locationWKT = `POINT(${lngLat.lng} ${lngLat.lat})`;
+
+    // Update modal content
+    const coordinatesEl = document.getElementById("locationCoordinates");
+    if (coordinatesEl) {
+      coordinatesEl.textContent = `${latlng.lat.toFixed(
+        6
+      )}, ${latlng.lng.toFixed(6)}`;
+    }
+
+    const confirmedLocationEl = document.getElementById("confirmedLocation");
+    if (confirmedLocationEl) {
+      confirmedLocationEl.value = locationWKT;
+    }
+
+    // Show confirmation modal
+    const confirmModalEl = document.getElementById("locationConfirmModal");
+    const confirmModal = new bootstrap.Modal(confirmModalEl);
+    confirmModal.show();
+
+    // Setup confirm button handler (only once)
+    const confirmBtn = document.getElementById("confirmLocationBtn");
+    if (confirmBtn && !confirmBtn.hasAttribute("data-handler-set")) {
+      confirmBtn.setAttribute("data-handler-set", "true");
+      confirmBtn.addEventListener("click", () => {
+        // Set flag to open record modal after confirmation modal closes
+        this.shouldOpenRecordModalAfterConfirm = true;
+        // Hide confirmation modal first
+        const confirmModalInstance =
+          bootstrap.Modal.getInstance(confirmModalEl);
+        if (confirmModalInstance) {
+          confirmModalInstance.hide();
+        }
+      });
+    }
+
+    // Handle when confirmation modal is fully hidden
+    confirmModalEl.addEventListener(
+      "hidden.bs.modal",
+      () => {
+        // If we should open record modal after confirmation, do it now
+        if (this.shouldOpenRecordModalAfterConfirm && this.pendingLocation) {
+          this.shouldOpenRecordModalAfterConfirm = false;
+          // Small delay to ensure modal is fully closed and Bootstrap has cleaned up
+          setTimeout(() => {
+            this.confirmLocationAndOpenRecordModal();
+          }, 150);
+        } else if (this.pendingLocation) {
+          // Modal was closed without confirmation, clear pending location
+          this.pendingLocation = null;
+        }
+      },
+      { once: false }
+    );
+  }
+
+  // Confirm location and open record modal
+  confirmLocationAndOpenRecordModal() {
+    if (!this.pendingLocation) return;
+
+    const locationWKT = `POINT(${this.pendingLocation.lng} ${this.pendingLocation.lat})`;
+
+    // Prepare location data
+    const locationData = {
+      lat: this.pendingLocation.lat,
+      lng: this.pendingLocation.lng,
+      location: locationWKT,
+    };
+
+    // Open record modal with location
+    if (typeof window.openRecordModalFromGravePlot === "function") {
+      window.openRecordModalFromGravePlot(locationData, locationWKT);
+    } else {
+      console.warn("openRecordModalFromGravePlot function not found");
+      CustomToast &&
+        CustomToast.error("Error", "Record modal functionality not loaded");
+    }
+
+    // Clear pending location
+    this.pendingLocation = null;
   }
 
   initializeUI() {
@@ -726,6 +828,9 @@ class CemeteryManager {
 
         this.updateTables(data);
 
+        // Grave plot click handlers are now handled by the general map click handler
+        // which shows a confirmation modal for all clicks
+
         // Fit bounds if any data exists
         setTimeout(() => {
           this.fitMapToData();
@@ -752,6 +857,8 @@ class CemeteryManager {
   }
 
   clearLayers() {
+    // Reset grave plot click handlers flag so they can be set up again
+    this.gravePlotClickHandlersSet = false;
     // Remove all custom layers and sources
     const layersToRemove = [
       "cemeteries",
@@ -794,6 +901,13 @@ class CemeteryManager {
       annotations: [],
       routes: [],
     };
+  }
+
+  // Setup click handlers for grave plots - now using confirmation modal
+  setupGravePlotClickHandlers() {
+    // Grave plots now use the general map click handler which shows confirmation modal
+    // This method is kept for potential future use but is not actively used
+    // since we want to show confirmation modal for all clicks including grave plots
   }
 
   fitMapToData() {

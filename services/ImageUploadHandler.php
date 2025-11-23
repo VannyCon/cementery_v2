@@ -114,6 +114,217 @@ class ImageUploadHandler {
     }
     
     /**
+     * Handle multiple image uploads for deceased records
+     * @param array $photoFiles Array of file arrays (from extractDeceasedRecordFiles)
+     * @param string $graveNumber The grave number
+     * @param int $deceasedIndex The deceased record index
+     * @return array Result with success status and uploaded file URLs or error message
+     */
+    public function handleDeceasedRecordUploads($photoFiles, $graveNumber, $deceasedIndex) {
+        error_log("=== handleDeceasedRecordUploads START ===");
+        error_log("Parameters - graveNumber: {$graveNumber}, deceasedIndex: {$deceasedIndex}");
+        error_log("photoFiles count: " . (is_array($photoFiles) ? count($photoFiles) : 'NOT_ARRAY'));
+        error_log("photoFiles type: " . gettype($photoFiles));
+        
+        try {
+            if (empty($photoFiles)) {
+                error_log("handleDeceasedRecordUploads: No files to upload");
+                return [
+                    'success' => true,
+                    'files' => [],
+                    'message' => 'No files to upload'
+                ];
+            }
+            
+            $uploadedFiles = [];
+            $errors = [];
+            $fileCount = count($photoFiles);
+            error_log("Processing {$fileCount} photo file(s)");
+            
+            foreach ($photoFiles as $photoIndex => $photoFile) {
+                error_log("--- Processing photo file index: {$photoIndex} ---");
+                error_log("File data: " . json_encode([
+                    'name' => $photoFile['name'] ?? 'NOT_SET',
+                    'type' => $photoFile['type'] ?? 'NOT_SET',
+                    'size' => $photoFile['size'] ?? 'NOT_SET',
+                    'error' => $photoFile['error'] ?? 'NOT_SET',
+                    'tmp_name' => isset($photoFile['tmp_name']) ? 'SET' : 'NOT_SET'
+                ]));
+                
+                if ($photoFile['error'] === UPLOAD_ERR_OK) {
+                    error_log("File upload error is OK, proceeding with upload");
+                    $result = $this->uploadDeceasedRecordFile($photoFile, $graveNumber, $deceasedIndex, $photoIndex + 1);
+                    
+                    error_log("Upload result for photo {$photoIndex}: " . json_encode([
+                        'success' => $result['success'] ?? false,
+                        'message' => $result['message'] ?? 'NO_MESSAGE'
+                    ]));
+                    
+                    if ($result['success']) {
+                        error_log("Upload successful for photo {$photoIndex}");
+                        $uploadedFiles[] = $result['data'];
+                    } else {
+                        $errorMsg = "Photo " . ($photoIndex + 1) . ": " . $result['message'];
+                        error_log("Upload failed for photo {$photoIndex}: {$errorMsg}");
+                        $errors[] = $errorMsg;
+                    }
+                } else if ($photoFile['error'] !== UPLOAD_ERR_NO_FILE) {
+                    $errorMsg = "Photo " . ($photoIndex + 1) . ": " . $this->getUploadErrorMessage($photoFile['error']);
+                    error_log("File upload error for photo {$photoIndex}: {$errorMsg} (error code: {$photoFile['error']})");
+                    $errors[] = $errorMsg;
+                } else {
+                    error_log("Photo {$photoIndex}: No file uploaded (UPLOAD_ERR_NO_FILE)");
+                }
+            }
+            
+            error_log("Upload summary - Success: " . count($uploadedFiles) . ", Errors: " . count($errors));
+            
+            if (empty($uploadedFiles) && !empty($errors)) {
+                $errorMessage = 'No files uploaded: ' . implode(', ', $errors);
+                error_log("handleDeceasedRecordUploads FAILED: {$errorMessage}");
+                return [
+                    'success' => false,
+                    'message' => $errorMessage
+                ];
+            }
+            
+            if (!empty($errors)) {
+                error_log('Deceased record image upload warnings: ' . implode(', ', $errors));
+            }
+            
+            $successMessage = count($uploadedFiles) . ' image(s) uploaded successfully';
+            error_log("handleDeceasedRecordUploads SUCCESS: {$successMessage}");
+            error_log("=== handleDeceasedRecordUploads END ===");
+            
+            return [
+                'success' => true,
+                'files' => $uploadedFiles,
+                'message' => $successMessage
+            ];
+            
+        } catch (Exception $e) {
+            error_log('handleDeceasedRecordUploads EXCEPTION: ' . $e->getMessage());
+            error_log('Exception trace: ' . $e->getTraceAsString());
+            return [
+                'success' => false,
+                'message' => 'Upload failed: ' . $e->getMessage()
+            ];
+        }
+    }
+    
+    /**
+     * Upload a single file for a deceased record to Cloudinary
+     */
+    private function uploadDeceasedRecordFile($file, $graveNumber, $deceasedIndex, $photoIndex) {
+        error_log("--- uploadDeceasedRecordFile START ---");
+        error_log("Parameters - graveNumber: {$graveNumber}, deceasedIndex: {$deceasedIndex}, photoIndex: {$photoIndex}");
+        error_log("File info - name: " . ($file['name'] ?? 'NOT_SET') . ", size: " . ($file['size'] ?? 'NOT_SET') . ", type: " . ($file['type'] ?? 'NOT_SET'));
+        error_log("File tmp_name exists: " . (isset($file['tmp_name']) && file_exists($file['tmp_name']) ? 'YES' : 'NO'));
+        if (isset($file['tmp_name'])) {
+            error_log("File tmp_name: {$file['tmp_name']}");
+            error_log("File tmp_name readable: " . (is_readable($file['tmp_name']) ? 'YES' : 'NO'));
+        }
+        
+        try {
+            // Validate file
+            error_log("Starting file validation...");
+            $validation = $this->validateFile($file);
+            error_log("Validation result: " . json_encode($validation));
+            
+            if (!$validation['valid']) {
+                error_log("File validation FAILED: " . $validation['message']);
+                return [
+                    'success' => false,
+                    'message' => $validation['message']
+                ];
+            }
+            error_log("File validation PASSED");
+            
+            // Use folder structure: cemetery_v2/grave/{graveNumber}/deceased_{index}/photo_{photoIndex}
+            // public_id already includes full path, so don't specify folder separately to avoid duplication
+            // Use folder parameter to ensure proper folder structure in Cloudinary
+            $folderPath = "cemetery_v2/grave/{$graveNumber}/deceased_{$deceasedIndex}";
+            $filename = "photo_{$photoIndex}";
+            // For Cloudinary, we'll use folder + filename separately to avoid issues
+            $publicId = $filename;
+            error_log("Cloudinary upload parameters:");
+            error_log("  - folder: {$folderPath}");
+            error_log("  - publicId (filename): {$publicId}");
+            error_log("  - tmp_name: " . ($file['tmp_name'] ?? 'NOT_SET'));
+            
+            // Check if Cloudinary is initialized
+            if (!$this->cloudinary) {
+                error_log("ERROR: Cloudinary object is not initialized!");
+                return [
+                    'success' => false,
+                    'message' => 'Cloudinary not initialized'
+                ];
+            }
+            error_log("Cloudinary object is initialized");
+            
+            // Upload to Cloudinary
+            // Use folder parameter with filename-only public_id to ensure proper folder structure
+            error_log("Attempting Cloudinary upload...");
+            $uploadResult = $this->cloudinary->uploadApi()->upload(
+                $file['tmp_name'],
+                [
+                    'folder' => $folderPath, // Specify folder to ensure proper folder structure
+                    'public_id' => $publicId, // Just the filename, folder is set separately
+                    'use_filename' => false, // Don't use original filename
+                    'overwrite' => false, // Don't overwrite existing files
+                    'resource_type' => 'image',
+                    'transformation' => [
+                        'quality' => 'auto',
+                        'fetch_format' => 'auto'
+                    ]
+                ]
+            );
+            
+            error_log("Cloudinary upload SUCCESS");
+            error_log("Upload result: " . json_encode([
+                'public_id' => $uploadResult['public_id'] ?? 'NOT_SET',
+                'secure_url' => $uploadResult['secure_url'] ?? 'NOT_SET',
+                'url' => $uploadResult['url'] ?? 'NOT_SET',
+                'bytes' => $uploadResult['bytes'] ?? 'NOT_SET',
+                'format' => $uploadResult['format'] ?? 'NOT_SET'
+            ]));
+            
+            $result = [
+                'success' => true,
+                'data' => [
+                    'public_id' => $uploadResult['public_id'],
+                    'secure_url' => $uploadResult['secure_url'],
+                    'url' => $uploadResult['url'],
+                    'filename' => "photo_{$photoIndex}",
+                    'size' => $uploadResult['bytes'],
+                    'format' => $uploadResult['format']
+                ]
+            ];
+            
+            error_log("uploadDeceasedRecordFile SUCCESS");
+            error_log("--- uploadDeceasedRecordFile END ---");
+            return $result;
+            
+        } catch (Exception $e) {
+            error_log("uploadDeceasedRecordFile EXCEPTION: " . $e->getMessage());
+            error_log("Exception class: " . get_class($e));
+            error_log("Exception trace: " . $e->getTraceAsString());
+            return [
+                'success' => false,
+                'message' => 'Upload error: ' . $e->getMessage()
+            ];
+        } catch (Error $e) {
+            error_log("uploadDeceasedRecordFile FATAL ERROR: " . $e->getMessage());
+            error_log("Error class: " . get_class($e));
+            error_log("Error trace: " . $e->getTraceAsString());
+            return [
+                'success' => false,
+                'message' => 'Fatal error: ' . $e->getMessage()
+            ];
+        }
+    }
+    
+    /**
      * Upload a single file to Cloudinary
      */
     private function uploadSingleFile($file, $graveNumber, $index) {
