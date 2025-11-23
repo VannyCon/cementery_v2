@@ -1,0 +1,37 @@
+# Git
+.git
+.gitignore
+
+# Documentation
+*.md
+README.md
+CLOUDINARY_SETUP.md
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+tmp/
+temp/
+
+# Local development files
+.env.local
+.env.development
+
+# Node modules (if any)
+node_modules/
+
+# Build artifacts
+dist/
+build/
