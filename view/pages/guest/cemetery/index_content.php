@@ -718,9 +718,14 @@
                                     </div>
                                 </div>
                             </div>
-                            <div class="info-item">
+                            <div class="info-item mb-3">
                                 <div class="small text-muted mb-1">Notes</div>
                                 <div id="viewNotesMobile" class="border rounded p-2 bg-light"></div>
+                            </div>
+                            <!-- Grave Photos - Mobile -->
+                            <div id="viewImagesMobile" class="info-item" style="display: none;">
+                                <div class="small text-muted mb-2">Grave Photos</div>
+                                <div id="viewImagesGalleryMobile" class="row g-2"></div>
                             </div>
                         </div>
                     </div>
@@ -775,6 +780,13 @@
                             <div class="info-item">
                                 <div class="small text-muted">Notes</div>
                                 <div id="viewNotes" class="border rounded p-3 bg-light"></div>
+                            </div>
+                        </div>
+                        <!-- Grave Photos - Desktop -->
+                        <div class="col-12">
+                            <div id="viewImages" class="info-item" style="display: none;">
+                                <div class="small text-muted mb-2">Grave Photos</div>
+                                <div id="viewImagesGallery" class="row g-2"></div>
                             </div>
                         </div>
                     </div>

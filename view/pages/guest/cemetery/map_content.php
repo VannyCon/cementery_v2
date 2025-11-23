@@ -84,24 +84,6 @@
     </div>
 </div>
 
-<!-- Location and Navigation Controls -->
-<!-- <div class="position-fixed" style="bottom: 50px; right: 20px; z-index: 1000;">
-    <div class="btn-group-vertical" role="group">
-        <button class="btn btn-primary btn-sm mb-2" id="startLocationTracking" title="Start Location Tracking">
-            <i class="fas fa-location-arrow"></i>
-            <span class="d-none d-sm-inline">My Location</span>
-        </button>
-        <button class="btn btn-success btn-sm mb-2" id="startNavigation" title="Start Navigation" disabled>
-            <i class="fas fa-route"></i>
-            <span class="d-none d-sm-inline">Navigate</span>
-        </button>
-        <button class="btn btn-info btn-sm mb-2" id="centerOnGrave" title="Center on Grave" disabled>
-            <i class="fas fa-crosshairs"></i>
-            <span class="d-none d-sm-inline">Center</span>
-        </button>
-    </div>
-</div> -->
-
 <!-- Grave Plot Modal -->
 <div class="modal fade" id="graveModal" tabindex="-1" style="z-index: 10000;">
     <div class="modal-dialog">
