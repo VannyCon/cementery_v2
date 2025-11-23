@@ -778,9 +778,11 @@ class LocationTracker {
 
     // Populate image gallery
     const imageGalleryEl = document.getElementById("arrivalImageGallery");
-    if (imageGalleryEl && record.image_path) {
+    // Check both image_path and grave_image fields (support both field names)
+    const imageField = record.grave_image;
+    if (imageGalleryEl && imageField) {
       // Split multiple image paths (comma-separated)
-      const imagePaths = record.image_path
+      const imagePaths = String(imageField)
         .split(",")
         .map((path) => path.trim())
         .filter((path) => path);
