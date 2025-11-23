@@ -34,6 +34,7 @@ class CemeteryManager {
           type: "raster",
           tiles: [
             "https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+            // "https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2020_3857/default/g/{z}/{y}/{x}.jpg",
           ],
           tileSize: 256,
           maxzoom: 18, // <— IMPORTANT: set to the highest zoom Esri provides
@@ -865,6 +866,34 @@ class CemeteryManager {
     // Reset grave plot click handlers flag so they can be set up again
     this.gravePlotClickHandlersSet = false;
 
+    // Clear current popup if exists
+    if (this.currentPopup) {
+      this.currentPopup.remove();
+      this.currentPopup = null;
+    }
+
+    // Remove event listeners for grave plots
+    if (this.gravePlotClickHandler && this.map) {
+      this.map.off("click", "grave-plots-point", this.gravePlotClickHandler);
+      this.gravePlotClickHandler = null;
+    }
+    if (this.gravePlotMouseEnterHandler && this.map) {
+      this.map.off(
+        "mouseenter",
+        "grave-plots-point",
+        this.gravePlotMouseEnterHandler
+      );
+      this.gravePlotMouseEnterHandler = null;
+    }
+    if (this.gravePlotMouseLeaveHandler && this.map) {
+      this.map.off(
+        "mouseleave",
+        "grave-plots-point",
+        this.gravePlotMouseLeaveHandler
+      );
+      this.gravePlotMouseLeaveHandler = null;
+    }
+
     // Clear grave plot markers
     if (this.gravePlotMarkers) {
       this.gravePlotMarkers.forEach((marker) => marker.remove());
@@ -878,6 +907,7 @@ class CemeteryManager {
       "grave-plots-polygon-stroke",
       "grave-plots-point",
       "grave-plots-circles",
+      "grave-plots-circles-stroke",
       "roads-top",
       "roads-border",
       "roads",
@@ -897,6 +927,7 @@ class CemeteryManager {
       "cemeteries",
       "roads",
       "grave-plots",
+      "grave-plots-point",
       "grave-plots-circles",
       "annotations",
       "routes",
@@ -1016,7 +1047,7 @@ class CemeteryManager {
         return;
       }
 
-      // Create point feature for marker
+      // Create point feature for marker with plot data
       pointFeatures.push({
         type: "Feature",
         geometry: {
@@ -1028,6 +1059,8 @@ class CemeteryManager {
           grave_number: plot.grave_number || `G-${plot.id}`,
           status: plot.status || "unknown",
           type: "grave-plot",
+          location: plot.location, // Store original location WKT
+          plot_data: plot, // Store full plot data for popup
         },
       });
 
@@ -1050,12 +1083,114 @@ class CemeteryManager {
         .setLngLat(coordinates)
         .addTo(this.map);
 
-      // Store marker reference
+      // Add click handler to marker to show popup
+      markerEl.addEventListener("click", (e) => {
+        e.stopPropagation(); // Prevent map click event
+        this.showGravePlotPopup(marker, plot, coordinates);
+      });
+
+      // Store marker reference with plot data
+      marker.plotData = plot;
+      marker.coordinates = coordinates;
       this.gravePlotMarkers.push(marker);
     });
 
     // Store point features
     this.features.gravePlots = pointFeatures;
+
+    // Add GeoJSON source for grave plots (for layer-based click handling as backup)
+    if (pointFeatures.length > 0) {
+      // Remove existing source and layer if exists
+      if (this.map.getLayer("grave-plots-point")) {
+        this.map.removeLayer("grave-plots-point");
+      }
+      if (this.map.getSource("grave-plots-point")) {
+        this.map.removeSource("grave-plots-point");
+      }
+
+      // Add GeoJSON source
+      this.map.addSource("grave-plots-point", {
+        type: "geojson",
+        data: {
+          type: "FeatureCollection",
+          features: pointFeatures,
+        },
+      });
+
+      // Add symbol layer for click handling (invisible, just for events)
+      this.map.addLayer({
+        id: "grave-plots-point",
+        type: "circle",
+        source: "grave-plots-point",
+        paint: {
+          "circle-radius": 15, // Small radius for click detection (can be invisible but needs area)
+          "circle-opacity": 0,
+          "circle-stroke-width": 0,
+        },
+      });
+
+      // Remove existing event listeners if any (to prevent duplicates)
+      if (this.gravePlotClickHandler) {
+        this.map.off("click", "grave-plots-point", this.gravePlotClickHandler);
+      }
+      if (this.gravePlotMouseEnterHandler) {
+        this.map.off(
+          "mouseenter",
+          "grave-plots-point",
+          this.gravePlotMouseEnterHandler
+        );
+      }
+      if (this.gravePlotMouseLeaveHandler) {
+        this.map.off(
+          "mouseleave",
+          "grave-plots-point",
+          this.gravePlotMouseLeaveHandler
+        );
+      }
+
+      // Add click handler to layer as backup
+      this.gravePlotClickHandler = (e) => {
+        const feature = e.features[0];
+        if (feature && feature.properties) {
+          const plot = feature.properties.plot_data || {
+            id: feature.properties.id,
+            grave_number: feature.properties.grave_number,
+            status: feature.properties.status,
+            location: feature.properties.location,
+          };
+          const coordinates = feature.geometry.coordinates;
+
+          // Find the corresponding marker
+          const marker = this.gravePlotMarkers.find(
+            (m) => m.plotData && m.plotData.id === plot.id
+          );
+
+          if (marker) {
+            this.showGravePlotPopup(marker, plot, coordinates);
+          }
+        }
+      };
+      this.map.on("click", "grave-plots-point", this.gravePlotClickHandler);
+
+      // Change cursor on hover
+      this.gravePlotMouseEnterHandler = () => {
+        this.map.getCanvas().style.cursor = "pointer";
+      };
+      this.map.on(
+        "mouseenter",
+        "grave-plots-point",
+        this.gravePlotMouseEnterHandler
+      );
+
+      this.gravePlotMouseLeaveHandler = () => {
+        this.map.getCanvas().style.cursor = "";
+      };
+      this.map.on(
+        "mouseleave",
+        "grave-plots-point",
+        this.gravePlotMouseLeaveHandler
+      );
+    }
 
     // Add circles source and layer
     if (circleFeatures.length > 0) {
@@ -1106,6 +1241,54 @@ class CemeteryManager {
     console.log(
       `Rendered ${this.gravePlotMarkers.length} grave plot markers with 10m radius circles`
     );
+  }
+
+  // Show popup when clicking on a grave plot marker
+  showGravePlotPopup(marker, plot, coordinates) {
+    // Close any existing popup
+    if (this.currentPopup) {
+      this.currentPopup.remove();
+    }
+
+    // Get the raw grave number for function call
+    const rawGraveNumber = plot.grave_number || `G-${plot.id}`;
+
+    // Escape HTML for display
+    const graveNumberDisplay = this.escapeHtml(rawGraveNumber);
+
+    // Escape grave number for use in onclick attribute (escape quotes and single quotes)
+    const escapedGraveNumber = rawGraveNumber
+      .replace(/\\/g, "\\\\") // Escape backslashes first
+      .replace(/'/g, "\\'") // Escape single quotes
+      .replace(/"/g, '\\"'); // Escape double quotes
+
+    // Create popup content with "Add Record" button
+    const popupContent = `
+      <div class="grave-plot-popup" style="min-width: 200px;">
+        <h6 class="mb-2">
+          <i class="fas fa-map-marker-alt text-danger me-2"></i>
+          ${graveNumberDisplay}
+        </h6>
+        <div class="d-grid gap-2 mt-3">
+          <button class="btn btn-primary btn-sm" onclick="addRecordToGrave('${escapedGraveNumber}')">
+            <i class="fas fa-plus me-1"></i>Add Record
+          </button>
+        </div>
+      </div>
+    `;
+
+    // Create and show popup
+    this.currentPopup = new maplibregl.Popup({
+      closeButton: true,
+      closeOnClick: false,
+      maxWidth: "300px",
+    })
+      .setLngLat(coordinates)
+      .setHTML(popupContent)
+      .addTo(this.map);
+
+    // Store popup reference on marker
+    marker.setPopup(this.currentPopup);
   }
 
   // Setup click handlers for grave plots - now using confirmation modal
@@ -2318,6 +2501,137 @@ class CemeteryManager {
 }
 
 // Global functions for modal management are now handled by ModalManager class
+
+// Global function to open record modal from popup
+window.openRecordModalFromPopup = function (locationWKT, lat, lng) {
+  // Close popup if exists
+  if (window.cemeteryManager && window.cemeteryManager.currentPopup) {
+    window.cemeteryManager.currentPopup.remove();
+    window.cemeteryManager.currentPopup = null;
+  }
+
+  // Prepare location data
+  const locationData = {
+    lat: lat,
+    lng: lng,
+    location: locationWKT,
+  };
+
+  // Open record modal with location
+  if (typeof window.openRecordModalFromGravePlot === "function") {
+    window.openRecordModalFromGravePlot(locationData, locationWKT);
+  } else {
+    console.warn("openRecordModalFromGravePlot function not found");
+    if (typeof CustomToast !== "undefined") {
+      CustomToast.error("Error", "Record modal functionality not loaded");
+    }
+  }
+};
+
+// Global function to add record to grave (compatible with records page)
+// This function finds the grave ID from the grave number and opens the record modal
+window.addRecordToGrave = function (graveNumber) {
+  // Close popup if exists
+  if (window.cemeteryManager && window.cemeteryManager.currentPopup) {
+    window.cemeteryManager.currentPopup.remove();
+    window.cemeteryManager.currentPopup = null;
+  }
+
+  // Find the grave plot ID from the cemetery manager's grave plot markers
+  let graveId = null;
+
+  if (window.cemeteryManager && window.cemeteryManager.gravePlotMarkers) {
+    // Search through grave plot markers to find matching grave number
+    const matchingMarker = window.cemeteryManager.gravePlotMarkers.find(
+      (marker) => {
+        if (marker.plotData) {
+          const plotGraveNumber =
+            marker.plotData.grave_number || `G-${marker.plotData.id}`;
+          return plotGraveNumber === graveNumber;
+        }
+        return false;
+      }
+    );
+
+    if (matchingMarker && matchingMarker.plotData) {
+      graveId = matchingMarker.plotData.id;
+    }
+  }
+
+  // If we couldn't find it in markers, try to get from API
+  if (!graveId && window.cemeteryManager) {
+    // We could make an API call here, but for now we'll proceed without graveId
+    // The form can still work without it if the grave number is provided
+    console.warn(`Grave ID not found for grave number: ${graveNumber}`);
+  }
+
+  // Set modal title
+  const recordModalLabel = document.getElementById("recordModalLabel");
+  if (recordModalLabel) {
+    recordModalLabel.textContent = "Add Record to Grave";
+  }
+
+  // Reset form
+  const recordForm = document.getElementById("recordForm");
+  if (recordForm) {
+    recordForm.reset();
+  }
+
+  // Set form values
+  const recordId = document.getElementById("recordId");
+  if (recordId) {
+    recordId.value = "";
+  }
+
+  const graveIdInput = document.getElementById("graveId");
+  if (graveIdInput) {
+    graveIdInput.value = graveId || "";
+  }
+
+  // Reset to single deceased record
+  if (typeof resetDeceasedRecords === "function") {
+    if (typeof deceasedRecordCount !== "undefined") {
+      deceasedRecordCount = 1;
+    }
+    resetDeceasedRecords();
+  }
+
+  // Set submit button
+  const submitBtn = document.getElementById("recordSubmitBtn");
+  if (submitBtn) {
+    submitBtn.textContent = "Save Record";
+    submitBtn.type = "submit";
+    submitBtn.onclick = null;
+  }
+
+  // Show modal
+  const recordModalEl = document.getElementById("recordModal");
+  if (!recordModalEl) {
+    console.error("Record modal element not found");
+    if (typeof CustomToast !== "undefined") {
+      CustomToast.error("Error", "Record modal not found");
+    }
+    return;
+  }
+
+  // Dispose of any existing modal instance first
+  const existingModal = bootstrap.Modal.getInstance(recordModalEl);
+  if (existingModal) {
+    existingModal.dispose();
+  }
+
+  // Create a new modal instance and show it
+  const modal = new bootstrap.Modal(recordModalEl, {
+    backdrop: true,
+    keyboard: true,
+    focus: true,
+  });
+
+  // Small delay to ensure any previous modal is fully closed
+  setTimeout(() => {
+    modal.show();
+  }, 50);
+};
 
 // Initialize the cemetery manager when the page loads
 document.addEventListener("DOMContentLoaded", function () {

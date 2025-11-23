@@ -873,54 +873,67 @@ class CemeteryServices extends config {
         try {
             $this->beginTransaction();
             
-            // Generate grave number first
-            $graveNumber = $this->generateGraveNumber();
+            // Check if grave plot already exists (grave_id_fk provided)
+            $graveId = null;
+            $graveNumber = null;
             
-            // Handle image uploads if files are provided
-            // $imagePath = null;
-            // if ($files && isset($files['images'])) {
-            //     require_once 'ImageUploadHandler.php';
-            //     $imageHandler = new ImageUploadHandler();
-            //     $uploadResult = $imageHandler->handleMultipleUploads($files, $graveNumber);
+            if (isset($data['grave_id_fk']) && !empty($data['grave_id_fk'])) {
+                // Use existing grave plot
+                $graveId = $data['grave_id_fk'];
                 
-            //     if ($uploadResult['success'] && !empty($uploadResult['files'])) {
-            //         // Extract URLs from Cloudinary data
-            //         $imageUrls = array_map(function($file) {
-            //             return $file['secure_url'];
-            //         }, $uploadResult['files']);
-            //         $imagePath = implode(',', $imageUrls);
-            //     } else if (!$uploadResult['success']) {
-            //         $this->rollback();
-            //         return [
-            //             'success' => false,
-            //             'message' => 'Image upload failed: ' . $uploadResult['message']
-            //         ];
-            //     }
-            // }
-            
-            // Create grave plot
-            $location = isset($data['location']) && $data['location'] ? $data['location'] : null;
-    
-            // If location is provided, validate it
-            if ($location) {
-                $testQuery = "SELECT ST_GeomFromText(?) as test_geom";
-                $testStmt = $this->pdo->prepare($testQuery);
-                $testStmt->execute([$location]);
-                if ($testStmt->fetch(PDO::FETCH_ASSOC)['test_geom'] === null) {
+                // Verify grave plot exists
+                $checkQuery = "SELECT id FROM tbl_grave_plots WHERE id = ?";
+                $checkStmt = $this->pdo->prepare($checkQuery);
+                $checkStmt->execute([$graveId]);
+                $grave = $checkStmt->fetch(PDO::FETCH_ASSOC);
+                
+                if (!$grave) {
                     $this->rollback();
-                    return ['success' => false, 'message' => 'Invalid location format.'];
+                    return [
+                        'success' => false,
+                        'message' => 'Grave plot not found'
+                    ];
                 }
+                
+                // Get the grave_number from an existing burial record with the same grave_id_fk
+                $graveNumberQuery = "SELECT grave_number FROM tbl_burial_records WHERE grave_id_fk = ? LIMIT 1";
+                $graveNumberStmt = $this->pdo->prepare($graveNumberQuery);
+                $graveNumberStmt->execute([$graveId]);
+                $graveNumberResult = $graveNumberStmt->fetch(PDO::FETCH_ASSOC);
+                $graveNumber = $graveNumberResult['grave_number'] ?? null;
+                
+                // If no existing grave_number found, use the one from data or generate a new one
+                if (!$graveNumber) {
+                    $graveNumber = $data['grave_number'] ?? $this->generateGraveNumber();
+                }
+            } else {
+                // Create new grave plot
+                $location = isset($data['location']) && $data['location'] ? $data['location'] : null;
+        
+                // If location is provided, validate it
+                if ($location) {
+                    $testQuery = "SELECT ST_GeomFromText(?) as test_geom";
+                    $testStmt = $this->pdo->prepare($testQuery);
+                    $testStmt->execute([$location]);
+                    if ($testStmt->fetch(PDO::FETCH_ASSOC)['test_geom'] === null) {
+                        $this->rollback();
+                        return ['success' => false, 'message' => 'Invalid location format.'];
+                    }
+                }
+        
+                $query = "INSERT INTO tbl_grave_plots
+                          (location)
+                          VALUES (ST_GeomFromText(?))";
+                $stmt = $this->pdo->prepare($query);
+                $stmt->execute([
+                    $location
+                ]);
+                
+                $graveId = $this->pdo->lastInsertId();
+                
+                // Generate grave number for new grave plot
+                $graveNumber = $this->generateGraveNumber();
             }
-    
-            $query = "INSERT INTO tbl_grave_plots
-                      (location)
-                      VALUES (ST_GeomFromText(?))";
-            $stmt = $this->pdo->prepare($query);
-            $stmt->execute([
-                $location
-            ]);
-            
-            $graveId = $this->pdo->lastInsertId();
             
             // Initialize ImageUploadHandler for image uploads
             $imageHandler = null;

@@ -303,9 +303,32 @@ document.addEventListener("DOMContentLoaded", function () {
         const formData = new FormData();
 
         const selectedLocation =
-          document.getElementById("selectedLocation").value;
+          document.getElementById("selectedLocation")?.value || "";
+        const graveId = document.getElementById("graveId")?.value || "";
 
-        if (!selectedLocation) {
+        // Get grave number from marker if we have graveId
+        let graveNumber = null;
+        if (
+          graveId &&
+          window.cemeteryManager &&
+          window.cemeteryManager.gravePlotMarkers
+        ) {
+          const matchingMarker = window.cemeteryManager.gravePlotMarkers.find(
+            (marker) => {
+              if (marker.plotData && marker.plotData.id == graveId) {
+                return true;
+              }
+              return false;
+            }
+          );
+
+          if (matchingMarker && matchingMarker.plotData) {
+            graveNumber = matchingMarker.plotData.grave_number || null;
+          }
+        }
+
+        // Check if we have either location (for new grave) or graveId (for existing grave)
+        if (!selectedLocation && !graveId) {
           // Re-enable submit button
           if (submitBtn) {
             submitBtn.disabled = false;
@@ -315,7 +338,7 @@ document.addEventListener("DOMContentLoaded", function () {
           CustomToast &&
             CustomToast.error(
               "Error",
-              "No location selected. Please click on a grave plot on the map."
+              "No location or grave selected. Please select a grave plot on the map or use an existing grave."
             );
           return;
         }
@@ -383,9 +406,24 @@ document.addEventListener("DOMContentLoaded", function () {
           }
         });
 
-        // Set action and location
+        // Set action - createGravePlotWithImages now handles both new graves (with location)
+        // and existing graves (with grave_id_fk)
         formData.append("action", "createGravePlotWithImages");
-        formData.append("location", selectedLocation);
+
+        // Add location if provided (for new grave plots)
+        if (selectedLocation) {
+          formData.append("location", selectedLocation);
+        }
+
+        // Add grave_id_fk if provided (for existing graves)
+        if (graveId) {
+          formData.append("grave_id_fk", graveId);
+        }
+
+        // Add grave_number if available (for existing graves, helps backend use correct number)
+        if (graveNumber) {
+          formData.append("grave_number", graveNumber);
+        }
 
         // Get API endpoint
         const authManager = new AuthManager();
