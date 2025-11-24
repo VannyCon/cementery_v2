@@ -1,6 +1,9 @@
 
 <!-- Include Dashboard Enhancement Styles -->
 <link rel="stylesheet" href="../../../css/dashboard-enhancements.css">
+<!-- PDF Export Libraries -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 
 <div class="container-fluid px-3 dashboard-container">
     <div class="card">
@@ -50,7 +53,7 @@
                     <!-- Main Charts Section -->
                     <div class="row g-4 mb-2">
                         <!-- Monthly Burials Chart - Enhanced -->
-                        <div class="col-xl-8 col-lg-7">
+                        <div class="col-xl-12">
                             <div class="card border-1 h-100">
                                 <div class="card-header bg-gradient-info text-white py-3 d-flex justify-content-between align-items-center">
                                     <div class="d-flex align-items-center">
@@ -77,7 +80,7 @@
                         </div>
 
                         <!-- Grave Utilization Chart - Enhanced -->
-                        <div class="col-xl-4 col-lg-5">
+                        <div class="col-xl-4 col-lg-5" style="display: none;">
                             <div class="card border-1 h-100">
                                 <div class="card-header bg-gradient-success text-white py-3">
                                     <div class="d-flex align-items-center">
@@ -130,7 +133,7 @@
                             </div>
                         </div>
                     </div>
-                    <div class="row g-4 mb-2">
+                    <div class="row g-4 mb-2" style="display: none;">
                         <!-- System Performance - Enhanced -->
                         <div class="col-xl-8 col-lg-7">
                             <div class="card border-1 h-100">
@@ -169,7 +172,7 @@
                     <!-- Recent Burials and Infrastructure Section -->
                     <div class="row g-4 mb-2">
                         <!-- Recent Burials - Enhanced -->
-                        <div class="col-xl-8 col-lg-7">
+                        <div class="col-xl-12 col-lg-12">
                             <div class="card border-1 h-100">
                                 <div class="card-header bg-gradient-primary text-white py-3">
                                     <div class="d-flex align-items-center">
@@ -199,7 +202,7 @@
                         </div>
 
                         <!-- Infrastructure Summary - Enhanced -->
-                        <div class="col-xl-4 col-lg-5">
+                        <div class="col-xl-4 col-lg-5" style="display: none;">
                             <div class="card border-1 h-100">
                                 <div class="card-header bg-gradient-info text-white py-3">
                                     <div class="d-flex align-items-center">
@@ -217,7 +220,7 @@
                     </div>
 
                     <!-- User Activity Section -->
-                    <div class="row g-4 mb-2">
+                    <div class="row g-4 mb-2" style="display: none;">
                         <div class="col-12">
                             <div class="card border-1">
                                 <div class="card-header bg-gradient-success text-white py-3">
@@ -243,37 +246,63 @@
                                     </h5>
                                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                                 </div>
-                                <div class="modal-body p-4">
-                                    <form id="exportForm">
-                                        <div class="row g-3">
-                                            <div class="col-md-6">
-                                                <label for="exportType" class="form-label fw-bold">
-                                                    <i class="fas fa-database me-2"></i>Data Type
-                                                </label>
-                                                <select class="form-select" id="exportType" name="type">
-                                                    <option value="burial_records">📚 Burial Records</option>
-                                                    <option value="grave_utilization">🥧 Grave Utilization</option>
-                                                    <option value="monthly_statistics">📈 Monthly Statistics</option>
-                                                </select>
-                                            </div>
-                                            <div class="col-md-6">
-                                                <label for="exportFormat" class="form-label fw-bold">
-                                                    <i class="fas fa-file me-2"></i>Export Format
-                                                </label>
-                                                <select class="form-select" id="exportFormat" name="format">
-                                                    <option value="csv">📄 CSV Format</option>
-                                                    <option value="json">📋 JSON Format</option>
-                                                </select>
+                                <div class="modal-body p-5 text-center">
+                                    <div class="mb-4">
+                                        <i class="fas fa-file-pdf text-danger" style="font-size: 4rem;"></i>
+                                    </div>
+                                    <h5 class="mb-3 fw-bold">Export Complete Dashboard Report</h5>
+                                    <p class="text-muted mb-4">
+                                        Download a comprehensive PDF report containing all visible analytics data including:
+                                    </p>
+                                    <div class="row g-3 mb-4 text-start">
+                                        <div class="col-md-6">
+                                            <div class="d-flex align-items-start">
+                                                <i class="fas fa-chart-line text-primary me-2 mt-1"></i>
+                                                <div>
+                                                    <strong>Monthly Burial Trends</strong>
+                                                    <p class="text-muted small mb-0">Chart showing burial statistics over time</p>
+                                                </div>
                                             </div>
                                         </div>
-                                    </form>
+                                        <div class="col-md-6">
+                                            <div class="d-flex align-items-start">
+                                                <i class="fas fa-chart-bar text-info me-2 mt-1"></i>
+                                                <div>
+                                                    <strong>Age Group Statistics</strong>
+                                                    <p class="text-muted small mb-0">Distribution of burials by age groups</p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <div class="d-flex align-items-start">
+                                                <i class="fas fa-chart-area text-success me-2 mt-1"></i>
+                                                <div>
+                                                    <strong>Weekly Trends</strong>
+                                                    <p class="text-muted small mb-0">Weekly burial activity trends</p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <div class="d-flex align-items-start">
+                                                <i class="fas fa-table text-warning me-2 mt-1"></i>
+                                                <div>
+                                                    <strong>Recent Burials</strong>
+                                                    <p class="text-muted small mb-0">Recent burial records table</p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="alert alert-info mb-4">
+                                        <i class="fas fa-info-circle me-2"></i>
+                                        <small>The report will include all visible charts and tables. Hidden sections are automatically excluded.</small>
+                                    </div>
                                 </div>
-                                <div class="modal-footer bg-light">
-                                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                                <div class="modal-footer bg-light justify-content-center">
+                                    <button type="button" class="btn btn-secondary me-3" data-bs-dismiss="modal">
                                         <i class="fas fa-times me-2"></i>Cancel
                                     </button>
-                                    <button type="button" class="btn btn-primary" onclick="performExport()">
-                                        <i class="fas fa-download me-2"></i>Export Data
+                                    <button type="button" class="btn btn-primary btn-lg px-5" onclick="performExport()">
+                                        <i class="fas fa-download me-2"></i>Download PDF Report
                                     </button>
                                 </div>
                             </div>
